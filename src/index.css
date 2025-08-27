@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-blue-100 via-purple-50 to-pink-100 min-h-screen;
+    font-family: 'Orbitron', monospace;
+  }
+}
+
+@layer components {
+  .pokeball-loader {
+    @apply w-12 h-12 rounded-full relative;
+    background: linear-gradient(90deg, #FF0000 50%, #FFFFFF 50%);
+    animation: spin 1s linear infinite;
+  }
+  
+  .pokeball-loader::before {
+    content: '';
+    @apply absolute top-1/2 left-1/2 w-4 h-4 bg-white border-2 border-gray-800 rounded-full;
+    transform: translate(-50%, -50%);
+  }
+  
+  .pokemon-card {
+    @apply bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105;
+    background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  }
+  
+  .type-badge {
+    @apply px-3 py-1 rounded-full text-white text-sm font-semibold shadow-md;
+  }
+  
+  .glass-morphism {
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

@@ -1,0 +1,107 @@
+/* Global app styles */
+.App {
+  text-align: center;
+}
+
+/* Pokeball animation for loading states */
+@keyframes pokeball-shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
+.pokeball-shake {
+  animation: pokeball-shake 0.5s ease-in-out infinite;
+}
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Focus states for accessibility */
+button:focus,
+input:focus,
+select:focus {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
+/* Pokemon type gradient backgrounds */
+.type-normal { background: linear-gradient(45deg, #A8A878, #C6C6A7); }
+.type-fire { background: linear-gradient(45deg, #F08030, #F5AC78); }
+.type-water { background: linear-gradient(45deg, #6890F0, #9DB7F5); }
+.type-electric { background: linear-gradient(45deg, #F8D030, #FAE078); }
+.type-grass { background: linear-gradient(45deg, #78C850, #A7DB8D); }
+.type-ice { background: linear-gradient(45deg, #98D8D8, #BCE6E6); }
+.type-fighting { background: linear-gradient(45deg, #C03028, #D67873); }
+.type-poison { background: linear-gradient(45deg, #A040A0, #C183C1); }
+.type-ground { background: linear-gradient(45deg, #E0C068, #EBD69D); }
+.type-flying { background: linear-gradient(45deg, #A890F0, #C6B7F5); }
+.type-psychic { background: linear-gradient(45deg, #F85888, #FA92B2); }
+.type-bug { background: linear-gradient(45deg, #A8B820, #C6D16E); }
+.type-rock { background: linear-gradient(45deg, #B8A038, #D1C17D); }
+.type-ghost { background: linear-gradient(45deg, #705898, #A292BC); }
+.type-dragon { background: linear-gradient(45deg, #7038F8, #A27DFA); }
+.type-dark { background: linear-gradient(45deg, #705848, #A29288); }
+.type-steel { background: linear-gradient(45deg, #B8B8D0, #D1D1E0); }
+.type-fairy { background: linear-gradient(45deg, #EE99AC, #F7C2CC); }
+
+/* Persona-specific styling */
+.persona-professor-oak {
+  --primary-color: #4F7942;
+  --secondary-color: #6B8E4A;
+}
+
+.persona-brock {
+  --primary-color: #8B4513;
+  --secondary-color: #A0522D;
+}
+
+.persona-misty {
+  --primary-color: #1E90FF;
+  --secondary-color: #4169E1;
+}
+
+.persona-evelyn {
+  --primary-color: #FF69B4;
+  --secondary-color: #FFB6C1;
+}
+
+/* Responsive design helpers */
+@media (max-width: 768px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Loading shimmer effect */
+.shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
