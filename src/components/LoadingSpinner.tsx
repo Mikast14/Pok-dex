@@ -25,7 +25,7 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
       />
       
       <motion.p
-        className="text-gray-600 text-center"
+        className="text-gray-600 dark:text-slate-300 text-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}

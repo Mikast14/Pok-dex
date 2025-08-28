@@ -78,6 +78,7 @@ type AppAction =
   | { type: 'RELEASE_POKEMON'; payload: number }
   | { type: 'ADD_TO_TEAM'; payload: Pokemon }
   | { type: 'REMOVE_FROM_TEAM'; payload: number }
+  | { type: 'REORDER_TEAM'; payload: { fromIndex: number; toIndex: number } }
   | { type: 'CLEAR_TEAM' }
   | { type: 'SET_PARTY_HP'; payload: { pokemonId: number; currentHp: number; maxHp: number } }
   | { type: 'DECREMENT_PP'; payload: { pokemonId: number; moveName: string } }
@@ -174,6 +175,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
       personaData[personaId] = {
         ...personaData[personaId],
         team: personaData[personaId].team.filter(p => p.id !== action.payload),
+      };
+      return { ...state, personaData };
+    }
+    case 'REORDER_TEAM': {
+      const { fromIndex, toIndex } = action.payload;
+      const team = [...personaData[personaId].team];
+      const [movedPokemon] = team.splice(fromIndex, 1);
+      team.splice(toIndex, 0, movedPokemon);
+      personaData[personaId] = {
+        ...personaData[personaId],
+        team,
       };
       return { ...state, personaData };
     }
@@ -404,6 +416,7 @@ interface AppContextType {
   releasePokemon: (pokemonId: number) => void;
   addToTeam: (pokemon: Pokemon) => void;
   removeFromTeam: (pokemonId: number) => void;
+  reorderTeam: (fromIndex: number, toIndex: number) => void;
   clearTeam: () => void;
   isCaught: (pokemonId: number) => boolean;
   isInTeam: (pokemonId: number) => boolean;
@@ -464,6 +477,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     releasePokemon: (pokemonId) => dispatch({ type: 'RELEASE_POKEMON', payload: pokemonId }),
     addToTeam: (pokemon) => dispatch({ type: 'ADD_TO_TEAM', payload: pokemon }),
     removeFromTeam: (pokemonId) => dispatch({ type: 'REMOVE_FROM_TEAM', payload: pokemonId }),
+    reorderTeam: (fromIndex, toIndex) => dispatch({ type: 'REORDER_TEAM', payload: { fromIndex, toIndex } }),
     clearTeam: () => dispatch({ type: 'CLEAR_TEAM' }),
     isCaught: (pokemonId) => caughtPokemons.some(p => p.id === pokemonId),
     isInTeam: (pokemonId) => team.some(p => p.id === pokemonId),

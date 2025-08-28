@@ -35,7 +35,7 @@ function App() {
           {/* Background decoration */}
           <div className="fixed inset-0 overflow-hidden pointer-events-none">
             <motion.div
-              className="absolute -top-40 -right-40 w-80 h-80 bg-yellow-200 rounded-full opacity-20"
+              className="absolute -top-40 -right-40 w-80 h-80 bg-yellow-200 dark:bg-yellow-800 rounded-full opacity-20"
               animate={{
                 scale: [1, 1.2, 1],
                 rotate: [0, 180, 360],
@@ -47,7 +47,7 @@ function App() {
               }}
             />
             <motion.div
-              className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-200 rounded-full opacity-20"
+              className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-200 dark:bg-blue-800 rounded-full opacity-20"
               animate={{
                 scale: [1.2, 1, 1.2],
                 rotate: [360, 180, 0],

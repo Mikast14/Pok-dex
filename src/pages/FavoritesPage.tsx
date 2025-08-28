@@ -145,9 +145,9 @@ const FavoritesPage: React.FC = () => {
       <div className="text-center">
         <div className="flex items-center justify-center space-x-3 mb-4">
           <Heart className="w-8 h-8 text-red-500" />
-          <h1 className="text-3xl font-bold text-gray-800">Your Favorites</h1>
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">Your Favorites</h1>
         </div>
-        <p className="text-gray-600">
+        <p className="text-gray-600 dark:text-slate-300">
           {favorites.length === 0 
             ? "You haven't added any favorites yet. Start exploring!" 
             : `${favorites.length} Pokémon in your collection`}
@@ -164,19 +164,19 @@ const FavoritesPage: React.FC = () => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2 }}
             >
-              <h2 className="text-xl font-bold text-gray-800 mb-4">Collection Insights</h2>
+              <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100 mb-4">Collection Insights</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-blue-600">{favorites.length}</p>
-                  <p className="text-gray-600">Total Favorites</p>
+                  <p className="text-gray-600 dark:text-slate-400">Total Favorites</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-green-600 capitalize">{insights.mostCommonType}</p>
-                  <p className="text-gray-600">Most Common Type</p>
+                  <p className="text-gray-600 dark:text-slate-400">Most Common Type</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-purple-600">{Math.round(insights.totalStats / favorites.length)}</p>
-                  <p className="text-gray-600">Avg. Total Stats</p>
+                  <p className="text-gray-600 dark:text-slate-400">Avg. Total Stats</p>
                 </div>
               </div>
             </motion.div>
@@ -188,11 +188,11 @@ const FavoritesPage: React.FC = () => {
               {/* Sort and Filter */}
               <div className="flex flex-wrap items-center space-x-4">
                 <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-700">Sort by:</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200">Sort by:</span>
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as any)}
-                    className="bg-white/50 border border-white/20 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="bg-white/50 dark:bg-slate-700/50 border border-white/20 dark:border-slate-600/30 rounded-lg px-3 py-1 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="added">Recently Added</option>
                     <option value="name">Name</option>
@@ -202,11 +202,11 @@ const FavoritesPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  <Filter className="w-4 h-4 text-gray-600" />
+                  <Filter className="w-4 h-4 text-gray-600 dark:text-slate-400" />
                   <select
                     value={filterType}
                     onChange={(e) => setFilterType(e.target.value as PokemonType | '')}
-                    className="bg-white/50 border border-white/20 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="bg-white/50 dark:bg-slate-700/50 border border-white/20 dark:border-slate-600/30 rounded-lg px-3 py-1 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">All Types</option>
                     {pokemonTypes.map(type => (
@@ -260,8 +260,8 @@ const FavoritesPage: React.FC = () => {
           transition={{ delay: 0.3 }}
         >
           <div className="text-6xl mb-6">💔</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">No Favorites Yet</h2>
-          <p className="text-gray-600 max-w-md mx-auto mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-slate-100 mb-4">No Favorites Yet</h2>
+          <p className="text-gray-600 dark:text-slate-300 max-w-md mx-auto mb-8">
             Start building your collection! Search for Pokémon and click the heart icon to add them to your favorites.
           </p>
           <motion.a

@@ -47,7 +47,7 @@ const uniqueById = (list: Pokemon[]) => {
 };
 
 const SearchPage: React.FC = () => {
-  const { isCaught } = useApp();
+  const { isInPokedex } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [pokedexPokemon, setPokedexPokemon] = useState<Pokemon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,7 +206,7 @@ const SearchPage: React.FC = () => {
     return <LoadingSpinner message="Loading Pokédex..." />;
   }
 
-  const caughtCount = pokedexPokemon.filter(p => isCaught(p.id)).length;
+  const caughtCount = pokedexPokemon.filter(p => isInPokedex(p.id)).length;
 
   return (
     <motion.div
@@ -273,11 +273,11 @@ const SearchPage: React.FC = () => {
       {/* Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         {filtered.map(p => {
-          const caught = isCaught(p.id);
+          const inPokedex = isInPokedex(p.id);
           return (
-            <div key={p.id} className={`relative ${caught ? '' : 'opacity-60 grayscale'}`}>
-              <PokemonCard pokemon={p} disableLink={!caught} />
-              {!caught && (
+            <div key={p.id} className={`relative ${inPokedex ? '' : 'opacity-60 grayscale'}`}>
+              <PokemonCard pokemon={p} disableLink={!inPokedex} />
+              {!inPokedex && (
                 <span className="absolute top-2 right-2 bg-gray-700/80 text-white text-xs font-bold px-2 py-1 rounded">Unknown</span>
               )}
             </div>

@@ -48,7 +48,7 @@ const PersonaSelector: React.FC = () => {
         <div className="relative">
           <motion.button
             onClick={() => setIsOpen(!isOpen)}
-            className="glass-morphism px-6 py-3 rounded-xl flex items-center space-x-3 hover:bg-white/30 transition-all duration-200 shadow-lg"
+            className="glass-morphism px-6 py-3 rounded-xl flex items-center space-x-3 hover:bg-white/30 dark:hover:bg-white/20 transition-all duration-200 shadow-lg"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -56,15 +56,15 @@ const PersonaSelector: React.FC = () => {
               {getPersonaIcon(state.currentPersona.id)}
             </span>
             <div className="text-left">
-              <p className="font-semibold text-gray-800">
+              <p className="font-semibold text-gray-800 dark:text-slate-100">
                 {state.currentPersona.name}
               </p>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-slate-300">
                 {getPersonaDescription(state.currentPersona.id)}
               </p>
             </div>
             <ChevronDown 
-              className={`w-5 h-5 text-gray-600 transition-transform duration-200 ${
+              className={`w-5 h-5 text-gray-600 dark:text-slate-400 transition-transform duration-200 ${
                 isOpen ? 'rotate-180' : ''
               }`} 
             />
@@ -88,8 +88,8 @@ const PersonaSelector: React.FC = () => {
                         setIsOpen(false);
                       }}
                       className={`
-                        w-full px-6 py-3 flex items-center space-x-3 hover:bg-white/20 transition-all duration-200
-                        ${state.currentPersona.id === persona.id ? 'bg-white/30' : ''}
+                        w-full px-6 py-3 flex items-center space-x-3 hover:bg-white/20 dark:hover:bg-white/10 transition-all duration-200
+                        ${state.currentPersona.id === persona.id ? 'bg-white/30 dark:bg-white/20' : ''}
                       `}
                       whileHover={{ x: 4 }}
                     >
@@ -97,10 +97,10 @@ const PersonaSelector: React.FC = () => {
                         {getPersonaIcon(persona.id)}
                       </span>
                       <div className="flex-1 text-left">
-                        <p className="font-semibold text-gray-800">
+                        <p className="font-semibold text-gray-800 dark:text-slate-100">
                           {persona.name}
                         </p>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-slate-300">
                           {getPersonaDescription(persona.id)}
                         </p>
                         <div className="flex flex-wrap gap-1 mt-1">

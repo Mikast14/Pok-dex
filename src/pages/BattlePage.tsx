@@ -74,6 +74,117 @@ const buildEffectivenessText = (multiplier: number): string | null => {
 
 const getSpeed = (p: Pokemon): number => p.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
 
+const getHpBarColor = (currentHp: number, maxHp: number): string => {
+  const percentage = currentHp / maxHp;
+  if (percentage > 0.6) return '#22c55e'; // Green for high HP
+  if (percentage > 0.3) return '#f59e0b'; // Yellow for medium HP
+  return '#ef4444'; // Red for low HP
+};
+
+// Pokémon catch rate system based on official games
+const getCatchRate = (pokemon: Pokemon): number => {
+  // Base catch rates for different Pokémon categories
+  const baseCatchRates: Record<string, number> = {
+    // Common Pokémon (Pidgey, Rattata, etc.)
+    'pidgey': 255, 'rattata': 255, 'caterpie': 255, 'weedle': 255, 'magikarp': 255,
+    'sentret': 255, 'hoothoot': 255, 'zigzagoon': 255, 'starly': 255, 'bidoof': 255,
+    
+    // Uncommon Pokémon (Pikachu, Charmander, etc.)
+    'pikachu': 190, 'charmander': 45, 'bulbasaur': 45, 'squirtle': 45,
+    'eevee': 45, 'growlithe': 190, 'vulpix': 190, 'ponyta': 190,
+    
+    // Rare Pokémon (Dragonite, Gyarados, etc.)
+    'dratini': 45, 'dragonair': 45, 'gyarados': 45,
+    'lapras': 45, 'snorlax': 25, 'chansey': 30, 'kangaskhan': 45,
+    
+    // Ultra Rare Pokémon (between Very Rare and Legendary)
+    'dragonite': 15, 'aerodactyl': 15, 'kabutops': 15, 'omastar': 15,
+    'tyranitar': 15, 'metagross': 15, 'salamence': 15, 'garchomp': 15,
+    'hydreigon': 15, 'goodra': 15, 'kommo-o': 15, 'dragapult': 15,
+    
+    // Legendary Pokémon (very rare)
+    'articuno': 3, 'zapdos': 3, 'moltres': 3, 'mewtwo': 3, 'mew': 45,
+    'lugia': 3, 'ho-oh': 3, 'rayquaza': 3, 'kyogre': 3, 'groudon': 3,
+    
+    // Mythical Pokémon (extremely rare)
+    'celebi': 45, 'jirachi': 3, 'deoxys': 3, 'arceus': 3,
+  };
+  
+  const pokemonName = pokemon.name.toLowerCase();
+  return baseCatchRates[pokemonName] || 45; // Default catch rate
+};
+
+const getEvolutionStage = (pokemon: Pokemon): number => {
+  // Evolution stage affects catch rate (higher stages are harder to catch)
+  const evolutionStages: Record<string, number> = {
+    // First stage (baby/basic)
+    'magikarp': 1, 'caterpie': 1, 'weedle': 1, 'pidgey': 1, 'rattata': 1,
+    'charmander': 1, 'bulbasaur': 1, 'squirtle': 1, 'pichu': 1, 'cleffa': 1,
+    
+    // Second stage (middle evolution)
+    'metapod': 2, 'kakuna': 2, 'pidgeotto': 2, 'raticate': 2, 'charmeleon': 2,
+    'ivysaur': 2, 'wartortle': 2, 'pikachu': 2, 'clefairy': 2, 'jigglypuff': 2,
+    
+    // Third stage (fully evolved)
+    'butterfree': 3, 'beedrill': 3, 'pidgeot': 3, 'charizard': 3, 'venusaur': 3,
+    'blastoise': 3, 'raichu': 3, 'clefable': 3, 'wigglytuff': 3, 'gyarados': 3,
+  };
+  
+  const pokemonName = pokemon.name.toLowerCase();
+  return evolutionStages[pokemonName] || 1; // Default to first stage
+};
+
+const getRarityMultiplier = (pokemon: Pokemon): number => {
+  const catchRate = getCatchRate(pokemon);
+  const evolutionStage = getEvolutionStage(pokemon);
+  
+  // Base rarity from catch rate (lower catch rate = rarer = harder to catch)
+  let rarityMultiplier = 1;
+  
+  if (catchRate <= 3) {
+    // Legendary/Mythical (very rare)
+    rarityMultiplier = 0.1;
+  } else if (catchRate <= 15) {
+    // Ultra Rare (new tier between Very Rare and Legendary)
+    rarityMultiplier = 0.2;
+  } else if (catchRate <= 25) {
+    // Very rare
+    rarityMultiplier = 0.3;
+  } else if (catchRate <= 45) {
+    // Rare
+    rarityMultiplier = 0.6;
+  } else if (catchRate <= 120) {
+    // Uncommon
+    rarityMultiplier = 0.8;
+  } else {
+    // Common
+    rarityMultiplier = 1.0;
+  }
+  
+  // Evolution stage penalty (higher stages are harder)
+  const evolutionPenalty = 1 - (evolutionStage - 1) * 0.2;
+  
+  return rarityMultiplier * evolutionPenalty;
+};
+
+const getRarityDisplay = (pokemon: Pokemon): { label: string; color: string; bgColor: string } => {
+  const catchRate = getCatchRate(pokemon);
+  
+  if (catchRate <= 3) {
+    return { label: 'LEGENDARY', color: 'text-yellow-300', bgColor: 'bg-yellow-600' };
+  } else if (catchRate <= 15) {
+    return { label: 'ULTRA RARE', color: 'text-orange-300', bgColor: 'bg-orange-600' };
+  } else if (catchRate <= 25) {
+    return { label: 'VERY RARE', color: 'text-purple-300', bgColor: 'bg-purple-600' };
+  } else if (catchRate <= 45) {
+    return { label: 'RARE', color: 'text-blue-300', bgColor: 'bg-blue-600' };
+  } else if (catchRate <= 120) {
+    return { label: 'UNCOMMON', color: 'text-green-300', bgColor: 'bg-green-600' };
+  } else {
+    return { label: 'COMMON', color: 'text-gray-300', bgColor: 'bg-gray-600' };
+  }
+};
+
 const calcDamageWithStages = (attacker: Combatant, defender: Combatant, moveType: string, movePower = 40) => {
   const atkBase = attacker.pokemon.stats.find(s => s.stat.name === 'attack')?.base_stat || 50;
   const defBase = defender.pokemon.stats.find(s => s.stat.name === 'defense')?.base_stat || 50;
@@ -328,6 +439,71 @@ const BattlePage: React.FC = () => {
     { id: 'luxury', name: 'Luxury Ball', modifier: 1.0, top: '#111827', bottom: '#111827' },
     { id: 'heal', name: 'Heal Ball', modifier: 1.1, top: '#ec4899', bottom: '#f9a8d4' }
   ] as const;
+
+  const getEnhancedBallStyle = (ballId: string) => {
+    switch (ballId) {
+      case 'poke':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #ffffff 0%, #ffffff 12%, transparent 12%),
+            linear-gradient(180deg, #ef4444 0%, #ef4444 50%, #ffffff 50%, #ffffff 100%)
+          `,
+          border: '2px solid #dc2626',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
+        };
+      case 'great':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #ffffff 0%, #ffffff 12%, transparent 12%),
+            linear-gradient(180deg, #2563eb 0%, #2563eb 50%, #ffffff 50%, #ffffff 100%)
+          `,
+          border: '2px solid #1d4ed8',
+          boxShadow: '0 2px 4px rgba(37, 99, 235, 0.3)'
+        };
+      case 'ultra':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #ffffff 0%, #ffffff 12%, transparent 12%),
+            linear-gradient(180deg, #111827 0%, #111827 50%, #f59e0b 50%, #f59e0b 100%)
+          `,
+          border: '2px solid #000000',
+          boxShadow: '0 2px 4px rgba(245, 158, 11, 0.3)'
+        };
+      case 'premier':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #ffffff 0%, #ffffff 12%, transparent 12%),
+            linear-gradient(180deg, #e5e7eb 0%, #e5e7eb 50%, #ffffff 50%, #ffffff 100%)
+          `,
+          border: '2px solid #d1d5db',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+        };
+      case 'luxury':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #FFD700 0%, #FFD700 15%, transparent 15%),
+            linear-gradient(180deg, #111827 0%, #111827 35%, #DC2626 35%, #DC2626 45%, #111827 45%, #111827 100%)
+          `,
+          border: '2px solid #FFD700',
+          boxShadow: '0 0 4px rgba(255, 215, 0, 0.5)'
+        };
+      case 'heal':
+        return {
+          background: `
+            radial-gradient(circle at 50% 50%, #ffffff 0%, #ffffff 12%, transparent 12%),
+            linear-gradient(180deg, #ec4899 0%, #ec4899 50%, #f9a8d4 50%, #f9a8d4 100%)
+          `,
+          border: '2px solid #db2777',
+          boxShadow: '0 2px 4px rgba(236, 72, 153, 0.3)'
+        };
+      default:
+        return {
+          background: `linear-gradient(180deg, #ef4444 50%, #ffffff 50%)`,
+          border: '2px solid #dc2626',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
+        };
+    }
+  };
   const [selectedBallId, setSelectedBallId] = useState<typeof ballOptions[number]['id']>('poke');
   // Catch mini-game state (in-battle)
   const [isCatchOpen, setIsCatchOpen] = useState(false);
@@ -975,7 +1151,13 @@ const BattlePage: React.FC = () => {
 
   const hpBar = (current: number, max: number) => (
     <div className="w-full bg-gray-200 h-3 rounded-full overflow-hidden">
-      <div className="h-full bg-green-500" style={{ width: `${Math.max(0, Math.round((current / max) * 100))}%` }} />
+      <div 
+        className="h-full transition-colors duration-300" 
+        style={{ 
+          width: `${Math.max(0, Math.round((current / max) * 100))}%`,
+          backgroundColor: getHpBarColor(current, max)
+        }} 
+      />
     </div>
   );
 
@@ -1027,13 +1209,38 @@ const BattlePage: React.FC = () => {
     setInBall(true);
     setPopOut(false);
 
-    // success chance: ball modifier + power bonus + low HP bonus
-    const modifier = (ballOptions.find(b => b.id === selectedBallId)?.modifier || 1);
-    const powerBonus = (power / 100) * 0.5; // up to +50%
+    // Authentic Pokémon catch rate calculation based on official games
+    const ballModifier = ballOptions.find(b => b.id === selectedBallId)?.modifier || 1;
+    const powerBonus = (power / 100) * 0.2; // up to +20%
     const hpRatio = Math.max(0, Math.min(1, enemy.currentHp / Math.max(1, enemy.maxHp)));
-    const lowHpBonus = (1 - hpRatio) * 0.6; // up to +60%
-    const baseChance = 0.2 * modifier;
-    const successChance = Math.max(0.05, Math.min(0.98, baseChance + powerBonus + lowHpBonus));
+    
+    // Get Pokémon rarity and evolution stage
+    const rarityMultiplier = getRarityMultiplier(enemy.pokemon);
+    const catchRate = getCatchRate(enemy.pokemon);
+    
+    // HP-based catch difficulty (similar to official games)
+    let hpMultiplier = 1;
+    if (hpRatio > 0.6) {
+      // Green HP: Very difficult
+      hpMultiplier = 0.3;
+    } else if (hpRatio > 0.3) {
+      // Yellow HP: Medium difficulty
+      hpMultiplier = 0.6;
+    } else {
+      // Red HP: Easy to catch
+      hpMultiplier = 1.0;
+    }
+    
+    // Calculate catch probability using official game formula
+    const a = Math.floor((3 * enemy.maxHp - 2 * enemy.currentHp) * catchRate * ballModifier / (3 * enemy.maxHp));
+    const b = Math.floor(65536 / Math.sqrt(Math.sqrt(255 / a)));
+    
+    // Apply rarity, HP, and power bonuses
+    const finalCatchRate = Math.max(1, Math.floor(a * rarityMultiplier * hpMultiplier));
+    const finalB = Math.floor(65536 / Math.sqrt(Math.sqrt(255 / finalCatchRate)));
+    
+    // Add power bonus to the final calculation
+    const successChance = Math.min(0.95, (finalB / 65536) + powerBonus);
 
     // shakes
     const willSucceed = Math.random() < successChance;
@@ -1361,7 +1568,7 @@ const BattlePage: React.FC = () => {
             animate={{ scale: 1, opacity: 1 }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xl font-bold">Catch {apiUtils.formatPokemonName(enemy.pokemon.name)}</h3>
+              <h3 className="text-xl font-bold">Catch Wild {apiUtils.formatPokemonName(enemy.pokemon.name)}</h3>
               <span className="text-sm text-gray-500 dark:text-slate-400">HP: {enemy.currentHp}/{enemy.maxHp}</span>
             </div>
             <div className="relative flex items-center justify-center">
@@ -1399,7 +1606,7 @@ const BattlePage: React.FC = () => {
                 <motion.div
                   key={`ball-${gamePhase}-${shakes}`}
                   className="absolute w-8 h-8 rounded-full overflow-hidden shadow-lg"
-                  style={{ background: `linear-gradient(180deg, ${ballOptions.find(b => b.id === selectedBallId)?.top || '#ef4444'} 50%, ${ballOptions.find(b => b.id === selectedBallId)?.bottom || '#ffffff'} 50%)`, border: '2px solid #111' }}
+                  style={getEnhancedBallStyle(selectedBallId)}
                   initial={{ bottom: -40, left: '50%', x: '-50%', y: 0, rotate: 0 }}
                   animate={
                     gamePhase === 'throw' && shakes === 0
@@ -1438,7 +1645,8 @@ const BattlePage: React.FC = () => {
                     onClick={() => setSelectedBallId(b.id)}
                     className={`flex items-center gap-2 px-2 py-1 rounded-lg border text-sm justify-center bg-white dark:bg-white/10 text-gray-800 dark:text-slate-200 ${selectedBallId === b.id ? 'border-blue-600 ring-2 ring-blue-200' : 'border-gray-300 dark:border-slate-600'}`}
                   >
-                    <span className="inline-block w-4 h-4 rounded-full border border-black" style={{ background: `linear-gradient(180deg, ${b.top} 50%, ${b.bottom} 50%)` }} />
+                    <span className="inline-block w-4 h-4 rounded-full border border-black" 
+                          style={getEnhancedBallStyle(b.id)} />
                     <span>{b.name} ({b.id === 'poke' ? '∞' : (state.ballInventory?.[b.id] ?? 0)})</span>
                   </button>
                 ))}

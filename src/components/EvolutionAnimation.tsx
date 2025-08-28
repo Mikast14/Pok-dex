@@ -52,7 +52,7 @@ const EvolutionAnimation: React.FC<EvolutionAnimationProps> = ({ fromName, toNam
 
       {/* Sprites crossfade */}
       <div className="relative flex flex-col items-center">
-        <div className="text-white/90 font-semibold mb-3">{fromName} is evolving…</div>
+        <div className="text-white/90 dark:text-slate-100 font-semibold mb-3">{fromName} is evolving…</div>
         <div className="relative w-72 h-72">
           <motion.img
             src={fromSprite}
@@ -81,9 +81,9 @@ const EvolutionAnimation: React.FC<EvolutionAnimationProps> = ({ fromName, toNam
           )}
         </div>
         {phase !== 'done' ? (
-          <div className="text-white/80 mt-2 text-sm">Please wait…</div>
+          <div className="text-white/80 dark:text-slate-200 mt-2 text-sm">Please wait…</div>
         ) : (
-          <div className="text-white mt-2 text-lg font-bold">Congratulations! Your {fromName} evolved into {toName}!</div>
+          <div className="text-white dark:text-slate-100 mt-2 text-lg font-bold">Congratulations! Your {fromName} evolved into {toName}!</div>
         )}
       </div>
     </div>
