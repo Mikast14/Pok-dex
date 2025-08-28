@@ -91,7 +91,8 @@ type AppAction =
   | { type: 'GAIN_LEVEL'; payload: { pokemonId: number; amount?: number } }
   | { type: 'LEARN_MOVE'; payload: { pokemonId: number; moveName: string; maxPp: number } }
   | { type: 'EVOLVE_POKEMON'; payload: { oldId: number; newPokemon: Pokemon } }
-  | { type: 'GAIN_EXP'; payload: { pokemonId: number; amount: number } };
+  | { type: 'GAIN_EXP'; payload: { pokemonId: number; amount: number } }
+  | { type: 'UNLOCK_ALL_POKEMON'; payload: Pokemon[] };
 
 const makePersonaData = () => Object.fromEntries(
   USER_PERSONAS.map(p => [p.id, { favorites: [], caughtPokemons: [], pokedex: [], team: [] }])
@@ -394,6 +395,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         error: null,
       };
+    case 'UNLOCK_ALL_POKEMON': {
+      const allPokemon = action.payload;
+      const personaId = state.currentPersona.id;
+      const personaData = { ...state.personaData };
+      
+      // Add all Pokémon to the Pokédex for the current persona
+      personaData[personaId] = {
+        ...personaData[personaId],
+        pokedex: allPokemon,
+      };
+      
+      return { ...state, personaData };
+    }
     default:
       return state;
   }
@@ -435,6 +449,7 @@ interface AppContextType {
   learnMove: (pokemonId: number, moveName: string, maxPp: number) => void;
   evolvePokemon: (oldId: number, newPokemon: Pokemon) => void;
   gainExp: (pokemonId: number, amount: number) => void;
+  unlockAllPokemon: (allPokemon: Pokemon[]) => void;
   pokedex: Pokemon[];
   isInPokedex: (pokemonId: number) => boolean;
 }
@@ -496,6 +511,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     learnMove: (pokemonId, moveName, maxPp) => dispatch({ type: 'LEARN_MOVE', payload: { pokemonId, moveName, maxPp } }),
     evolvePokemon: (oldId, newPokemon) => dispatch({ type: 'EVOLVE_POKEMON', payload: { oldId, newPokemon } }),
     gainExp: (pokemonId, amount) => dispatch({ type: 'GAIN_EXP', payload: { pokemonId, amount } }),
+    unlockAllPokemon: (allPokemon) => dispatch({ type: 'UNLOCK_ALL_POKEMON', payload: allPokemon }),
     pokedex,
     isInPokedex: (pokemonId) => pokedex.some(p => p.id === pokemonId),
   };
