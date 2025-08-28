@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useApp } from '../contexts/AppContext';
 import { pokemonApi, apiUtils } from '../services/pokemonApi';
 import { Pokemon } from '../types/pokemon';
+import MoveReplaceModal from '../components/MoveReplaceModal';
 
 interface Combatant {
   pokemon: Pokemon;
@@ -12,11 +14,13 @@ interface Combatant {
   movePp: Record<string, { pp: number; maxPp: number }>;
   atkStage: number; // -6..+6
   defStage: number; // -6..+6
+  level: number;
 }
 
-const calcMaxHp = (p: Pokemon) => {
-  const hp = p.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
-  return hp * 2;
+const calcMaxHp = (p: Pokemon, level: number) => {
+  const base = p.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
+  // Simplified HP formula scaling with level
+  return Math.max(1, Math.floor(((base * 2) * level) / 100) + level + 10);
 };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -73,9 +77,12 @@ const getSpeed = (p: Pokemon): number => p.stats.find(s => s.stat.name === 'spee
 const calcDamageWithStages = (attacker: Combatant, defender: Combatant, moveType: string, movePower = 40) => {
   const atkBase = attacker.pokemon.stats.find(s => s.stat.name === 'attack')?.base_stat || 50;
   const defBase = defender.pokemon.stats.find(s => s.stat.name === 'defense')?.base_stat || 50;
-  const atk = atkBase * stageToMultiplier(attacker.atkStage);
-  const def = defBase * stageToMultiplier(defender.defStage);
-  const level = 50;
+  // Simplified stat scaling with level
+  const atkStat = Math.max(1, Math.floor(((atkBase * 2) * attacker.level) / 100) + 5);
+  const defStat = Math.max(1, Math.floor(((defBase * 2) * defender.level) / 100) + 5);
+  const atk = atkStat * stageToMultiplier(attacker.atkStage);
+  const def = defStat * stageToMultiplier(defender.defStage);
+  const level = attacker.level;
   const base = (((2 * level) / 5 + 2) * movePower * (atk / Math.max(1, def)) / 50) + 2;
 
   // STAB and type effectiveness
@@ -87,7 +94,29 @@ const calcDamageWithStages = (attacker: Combatant, defender: Combatant, moveType
   return { dmg, effectiveness, stab, moveType };
 };
 
-const pickMoves = (p: Pokemon): string[] => {
+const getLevelUpMovesAtOrBelow = (p: Pokemon, level: number): Array<{ name: string; level: number }> => {
+  const candidates: Array<{ name: string; level: number }> = [];
+  for (const m of p.moves) {
+    const vg = m.version_group_details?.find(v => v.move_learn_method?.name === 'level-up' && (v.level_learned_at ?? 0) > 0);
+    const lvl = vg?.level_learned_at ?? 0;
+    if (lvl > 0 && lvl <= level) candidates.push({ name: m.move.name, level: lvl });
+  }
+  // Sort by level asc, then name; ensure unique by name keeping highest level occurrence
+  const map = new Map<string, number>();
+  candidates.forEach(c => {
+    const prev = map.get(c.name);
+    if (prev === undefined || c.level > prev) map.set(c.name, c.level);
+  });
+  const arr = Array.from(map.entries()).map(([name, lvl]) => ({ name, level: lvl }));
+  arr.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  return arr;
+};
+
+const pickMoves = (p: Pokemon, level: number): string[] => {
+  const levelUps = getLevelUpMovesAtOrBelow(p, level);
+  const selected = levelUps.slice(-4).map(m => m.name);
+  if (selected.length > 0) return selected;
+  // fallback if no level-up data
   const names = p.moves.slice(0, 10).map(m => m.move.name);
   const unique = Array.from(new Set(names));
   while (unique.length < 4) unique.push('tackle');
@@ -267,14 +296,15 @@ const HitEffect: React.FC<{ typeName: string; keyId: number }> = ({ typeName, ke
 };
 
 const BattlePage: React.FC = () => {
-  const { team, state, setPartyHp, decrementPp, initMovePp, addBalls, catchPokemon, setPokeball, decrementBall } = useApp();
+  const navigate = useNavigate();
+  const { team, state, setPartyHp, decrementPp, initMovePp, addBalls, catchPokemon, setPokeball, decrementBall, learnMove, evolvePokemon, gainExp, restoreAtPokecenter, gainLevel } = useApp();
   const [playerParty, setPlayerParty] = useState<Combatant[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [enemy, setEnemy] = useState<Combatant | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [turn, setTurn] = useState<'player' | 'enemy'>('player');
   const [busy, setBusy] = useState(false);
-  const [moveInfoMap, setMoveInfoMap] = useState<Record<string, { type: string; power?: number | null }>>({});
+  const [moveInfoMap, setMoveInfoMap] = useState<Record<string, { type: string; power?: number | null; pp?: number | null }>>({});
   const [anim, setAnim] = useState<{
     playerAttack: boolean;
     enemyAttack: boolean;
@@ -289,6 +319,7 @@ const BattlePage: React.FC = () => {
   const [hitFx, setHitFx] = useState<{ target: 'enemy' | 'player' | null; typeName: string; id: number }>({ target: null, typeName: 'normal', id: 0 });
   const [needsTeam, setNeedsTeam] = useState(false);
   const [rewards, setRewards] = useState<Record<string, number> | null>(null);
+  const [enemyLevel, setEnemyLevel] = useState<number | null>(null);
   const ballOptions = [
     { id: 'poke', name: 'Poké Ball', modifier: 1.0, top: '#ef4444', bottom: '#ffffff' },
     { id: 'great', name: 'Great Ball', modifier: 1.5, top: '#2563eb', bottom: '#ffffff' },
@@ -311,16 +342,86 @@ const BattlePage: React.FC = () => {
   const [inBall, setInBall] = useState(false);
   const [popOut, setPopOut] = useState(false);
   const [resultText, setResultText] = useState('');
+  const [expEarned, setExpEarned] = useState<number | null>(null);
+  const [pendingMove, setPendingMove] = useState<{
+    pokemonId: number;
+    newMove: string;
+    maxPp: number;
+    currentMoves: string[];
+  } | null>(null);
 
-  const buildPartyFromTeam = (partySource: Pokemon[]) => partySource.map(p => ({
-    pokemon: p,
-    currentHp: state.persistentParty.byId[p.id]?.currentHp ?? calcMaxHp(p),
-    maxHp: calcMaxHp(p),
-    moves: pickMoves(p),
-    movePp: {},
-    atkStage: 0,
-    defStage: 0
-  }));
+  // Prefer early-route/common species for wild encounters (tiers)
+  const COMMON_WILDS = useRef<string[]>([
+    'pidgey','rattata','caterpie','weedle','zubat','geodude','spearow','sandshrew','ekans','oddish','paras','venonat','bellsprout','magnemite','doduo','grimer','krabby','voltorb','sentret','hoothoot','ledyba','spinarak','mareep','hoppip','wooper','poochyena','zigzagoon','wurmple','taillow','shroomish','whismur','wingull','starly','bidoof','kricketot','shinx','buneary','patrat','lillipup','purrloin','pidove','blitzle','bunnelby','fletchling','scatterbug','pancham','skiddo','pikipek','yungoos','wooloo','rookidee'
+  ]);
+  const MID_WILDS = useRef<string[]>([
+    'nidoran-m','nidoran-f','vulpix','meowth','psyduck','mankey','machop','ponyta','slowpoke','magnemite','farfetchd','seel','grimer','gastly','drowzee','exeggcute','cubone','koffing','rhyhorn','tangela','goldeen','staryu','magikarp','tyrogue','murkrow','phanpy','slugma','remoraid','houndour','larvitar','seedot','lotad','numel','spheal','swablu','barboach','corphish','shuppet','duskull','snorunt','bagon','beldum','budew','shellos','cranidos','shieldon','drifloon','stunky','buneary','glameow','roggenrola','woobat','drilbur','sandile','darumaka','deerling','frillish','joltik','klink','axew','cubchoo','shelmet','tynamo','litwick'
+  ]);
+  const ADV_WILDS = useRef<string[]>([
+    'arcanine','raichu','nidoking','nidoqueen','persian','primeape','rapidash','dewgong','cloyster','hypno','kingler','electrode','marowak','weezing','rhydon','seadra','seaking','starmie','gyarados','scyther','pinsir','omastar','kabutops','aerodactyl','noctowl','furret','granbull','donphan','magcargo','piloswine','mismagius','honchkrow','breloom','aggron','flygon','altaria','walrein','milotic','absol','salamence','metagross','staraptor','luxray','rampardos','bastiodon','gallade','drapion','garchomp','vanilluxe','krookodile','haxorus','braviary','pyroar','talonflame','pangoro','gogoat','lycanroc','mudsdale','bewear','tsareena','grapploct'
+  ]);
+
+  const pickWildNameForLevel = (playerLevel: number): string => {
+    const randFrom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    const weighted = (entries: Array<{ pool: string[]; weight: number }>) => {
+      const total = entries.reduce((s, e) => s + e.weight, 0);
+      let r = Math.random() * total;
+      for (const e of entries) {
+        if ((r -= e.weight) <= 0) return randFrom(e.pool);
+      }
+      return randFrom(entries[entries.length - 1].pool);
+    };
+
+    if (playerLevel < 10) {
+      return randFrom(COMMON_WILDS.current);
+    } else if (playerLevel < 20) {
+      return weighted([
+        { pool: COMMON_WILDS.current, weight: 80 },
+        { pool: MID_WILDS.current, weight: 20 },
+      ]);
+    } else if (playerLevel < 30) {
+      return weighted([
+        { pool: COMMON_WILDS.current, weight: 50 },
+        { pool: MID_WILDS.current, weight: 50 },
+      ]);
+    } else if (playerLevel < 45) {
+      return weighted([
+        { pool: COMMON_WILDS.current, weight: 25 },
+        { pool: MID_WILDS.current, weight: 60 },
+        { pool: ADV_WILDS.current, weight: 15 },
+      ]);
+    } else {
+      return weighted([
+        { pool: COMMON_WILDS.current, weight: 10 },
+        { pool: MID_WILDS.current, weight: 40 },
+        { pool: ADV_WILDS.current, weight: 50 },
+      ]);
+    }
+  };
+
+  const getCommonWildPokemon = async (playerLevel: number): Promise<Pokemon> => {
+    const name = pickWildNameForLevel(playerLevel);
+    try {
+      return await pokemonApi.getPokemon(name);
+    } catch {
+      return (await pokemonApi.getRandomPokemon(1))[0];
+    }
+  };
+
+  const buildPartyFromTeam = (partySource: Pokemon[]) => partySource.map(p => {
+    const partyRec = state.persistentParty.byId[p.id];
+    const level = partyRec?.level ?? 5;
+    return {
+      pokemon: p,
+      currentHp: partyRec?.currentHp ?? calcMaxHp(p, level),
+      maxHp: partyRec?.maxHp ?? calcMaxHp(p, level),
+      moves: pickMoves(p, level),
+      movePp: partyRec?.moves ? Object.fromEntries(Object.entries(partyRec.moves).map(([k, v]) => [k, { ...v }])) : {},
+      atkStage: 0,
+      defStage: 0,
+      level
+    } as Combatant;
+  });
 
   const startNewBattle = async () => {
     setBusy(true);
@@ -332,8 +433,12 @@ const BattlePage: React.FC = () => {
     if (needsTeam) { setBusy(false); return; }
     // keep HP persistent across battles; reset stages only
     setPlayerParty(prev => prev.map(c => ({ ...c, atkStage: 0, defStage: 0 })));
-    const wild = (await pokemonApi.getRandomPokemon(1))[0];
-    setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild), maxHp: calcMaxHp(wild), moves: pickMoves(wild), atkStage: 0, defStage: 0 });
+    const active = playerParty[activeIdx];
+    const playerLevel = state.persistentParty.byId[active?.pokemon.id || 0]?.level ?? 5;
+    const wild = await getCommonWildPokemon(playerLevel);
+    const enemyLvl = Math.max(3, Math.min(70, playerLevel + (Math.floor(Math.random() * 5) - 2))); // ±2 variance
+    setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild, enemyLvl), maxHp: calcMaxHp(wild, enemyLvl), moves: pickMoves(wild, enemyLvl), movePp: {}, atkStage: 0, defStage: 0, level: enemyLvl });
+    setEnemyLevel(enemyLvl);
     setLog([`A wild ${apiUtils.formatPokemonName(wild.name)} appeared!`]);
     setTurn('player');
     setAnim({ playerAttack: false, enemyAttack: false, enemyHit: false, playerHit: false, enemyFaint: false, playerFaint: false });
@@ -361,8 +466,12 @@ const BattlePage: React.FC = () => {
       setPlayerParty(party);
       setActiveIdx(0);
 
-      const wild = (await pokemonApi.getRandomPokemon(1))[0];
-      setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild), maxHp: calcMaxHp(wild), moves: pickMoves(wild), atkStage: 0, defStage: 0 });
+      const active = party[0];
+      const playerLevel = state.persistentParty.byId[active?.pokemon.id || 0]?.level ?? 5;
+      const wild = await getCommonWildPokemon(playerLevel);
+      const enemyLvl = Math.max(3, Math.min(70, playerLevel + (Math.floor(Math.random() * 5) - 2)));
+      setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild, enemyLvl), maxHp: calcMaxHp(wild, enemyLvl), moves: pickMoves(wild, enemyLvl), movePp: {}, atkStage: 0, defStage: 0, level: enemyLvl });
+      setEnemyLevel(enemyLvl);
       setLog([`A wild ${apiUtils.formatPokemonName(wild.name)} appeared!`]);
       setTurn('player');
       setVictory(false);
@@ -437,7 +546,7 @@ const BattlePage: React.FC = () => {
   }, [isCatchOpen, gamePhase, powerDir]);
 
   const player = playerParty[activeIdx];
-  const playerAlive = playerParty.some(c => c.currentHp > 0);
+  // const playerAlive = playerParty.some(c => c.currentHp > 0);
 
   // Force switch whenever active Pokémon is at 0 HP and others are alive; defeat if none alive
   useEffect(() => {
@@ -651,6 +760,57 @@ const BattlePage: React.FC = () => {
       if ((enemy.currentHp - result.dmg) <= 0) {
         setAnim(a => ({ ...a, enemyFaint: true }));
         setLog(l => [...l, `Wild ${apiUtils.formatPokemonName(enemy.pokemon.name)} fainted! You win!`]);
+        // Give EXP and level up active Pokémon
+        try {
+          const activeId = player.pokemon.id;
+          // EXP based on enemy base exp; fallback 100
+          if (!defeat) {
+            const expGain = enemy.pokemon.base_experience || 100;
+            const gained = Math.round(expGain);
+            gainExp(activeId, gained);
+            setExpEarned(gained);
+          }
+          // Learn level-up moves that became available at the new level, up to 4 total
+          const activeLevel = (state.persistentParty.byId[activeId]?.level ?? 5);
+          const levelUps = getLevelUpMovesAtOrBelow(player.pokemon, activeLevel);
+          // Keep last 4 moves by level; initialize PP for any new ones
+          const keep = levelUps.slice(-4).map(m => m.name);
+          for (const name of keep) {
+            if (!state.persistentParty.byId[activeId]?.moves?.[name]) {
+              try {
+                const md = await pokemonApi.getMove(name);
+                const maxPp = (typeof md.pp === 'number' ? md.pp : 20);
+                handleLearnMove(activeId, name, maxPp);
+              } catch {}
+            }
+          }
+
+          // Try auto-evolution for common level thresholds (16, 36) via species + chain lookup
+          const species = await pokemonApi.getPokemonSpecies(player.pokemon.id);
+          if (species?.evolution_chain?.url) {
+            const evoId = apiUtils.extractIdFromUrl(species.evolution_chain.url);
+            const chain = await pokemonApi.getEvolutionChain(evoId);
+            // Find next evolution node for current species name
+            const findNode = (node: any): any | null => {
+              if (node.species?.name === player.pokemon.name) return node;
+              for (const child of node.evolves_to || []) {
+                const found = findNode(child);
+                if (found) return found;
+              }
+              return null;
+            };
+            const node = findNode(chain.chain);
+            const next = node?.evolves_to?.[0];
+            const minLevel = next?.evolution_details?.[0]?.min_level ?? null;
+            if (next?.species?.name && minLevel && (state.persistentParty.byId[activeId]?.level ?? 5) >= minLevel) {
+              try {
+                const evolved = await pokemonApi.getPokemon(next.species.name);
+                evolvePokemon(activeId, evolved);
+                setLog(l => [...l, `${apiUtils.formatPokemonName(player.pokemon.name)} evolved into ${apiUtils.formatPokemonName(evolved.name)}!`]);
+              } catch {}
+            }
+          }
+        } catch {}
         setVictory(true);
         // Reward balls based on rarity table
         const earned: Record<string, number> = {};
@@ -773,6 +933,27 @@ const BattlePage: React.FC = () => {
     setBusy(false);
   };
 
+  // Helper for move details (for modal/tooltips)
+  const getMoveDetails = (moveName: string) => {
+    const md = moveInfoMap[moveName];
+    if (!md) return null;
+    return (
+      <span className="text-xs text-gray-500">Type: {md.type}, Power: {md.power ?? '—'}, PP: {md.pp ?? '—'}</span>
+    );
+  };
+
+  // Patch: handle move learning after level up
+  const handleLearnMove = async (pokemonId: number, moveName: string, maxPp: number) => {
+    const partyRec = state.persistentParty.byId[pokemonId];
+    const currentMoves = partyRec?.moves ? Object.keys(partyRec.moves) : [];
+    if (currentMoves.length < 4) {
+      learnMove(pokemonId, moveName, maxPp);
+    } else if (!currentMoves.includes(moveName)) {
+      setPendingMove({ pokemonId, newMove: moveName, maxPp, currentMoves });
+    }
+    // else: already knows the move, do nothing
+  };
+
   if (needsTeam) {
     return (
       <div className="flex items-center justify-center min-h-[50vh] text-center">
@@ -875,6 +1056,13 @@ const BattlePage: React.FC = () => {
       setShowStars(true);
       catchPokemon(enemy.pokemon);
       setPokeball(enemy.pokemon.id, selectedBallId);
+      try {
+        const current = state.persistentParty.byId[enemy.pokemon.id]?.level ?? 5;
+        // Set caught Pokémon level to enemyLevel (from state) by applying delta
+        const targetLevel = enemyLevel ?? current;
+        const delta = Math.max(1, Math.min(100, targetLevel)) - current;
+        if (delta !== 0) gainLevel(enemy.pokemon.id, delta);
+      } catch {}
       // Initialize caught Pokémon HP to full in persistent state
       try {
         const baseHp = enemy.pokemon.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
@@ -929,6 +1117,12 @@ const BattlePage: React.FC = () => {
       setLog(l => [...l, `Gotcha! You caught ${apiUtils.formatPokemonName(enemy.pokemon.name)}!`]);
       catchPokemon(enemy.pokemon);
       setPokeball(enemy.pokemon.id, selectedBallId);
+      try {
+        const current = state.persistentParty.byId[enemy.pokemon.id]?.level ?? 5;
+        const targetLevel = enemyLevel ?? current;
+        const delta = Math.max(1, Math.min(100, targetLevel)) - current;
+        if (delta !== 0) gainLevel(enemy.pokemon.id, delta);
+      } catch {}
       // Initialize caught Pokémon HP to full in persistent state
       try {
         const baseHp = enemy.pokemon.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
@@ -984,7 +1178,7 @@ const BattlePage: React.FC = () => {
         {/* Player on the left */}
         <div className="glass-morphism rounded-2xl p-4 order-1">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold">{apiUtils.formatPokemonName(player.pokemon.name)}</h3>
+            <h3 className="font-bold text-gray-800 dark:text-slate-100">{apiUtils.formatPokemonName(player.pokemon.name)} <span className="text-xs font-normal text-gray-600 dark:text-slate-300">Lv. {state.persistentParty.byId[player.pokemon.id]?.level ?? 5}</span></h3>
             <span>{player.currentHp}/{player.maxHp}</span>
           </div>
           {hpBar(player.currentHp, player.maxHp)}
@@ -1002,7 +1196,7 @@ const BattlePage: React.FC = () => {
         {/* Enemy on the right */}
         <div className="glass-morphism rounded-2xl p-4 order-2">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold">Wild {apiUtils.formatPokemonName(enemy.pokemon.name)}</h3>
+            <h3 className="font-bold text-gray-800 dark:text-slate-100">Wild {apiUtils.formatPokemonName(enemy.pokemon.name)} <span className="text-xs font-normal text-gray-600 dark:text-slate-300">Lv. {enemyLevel ?? '—'}</span></h3>
             <span>{enemy.currentHp}/{enemy.maxHp}</span>
           </div>
           {hpBar(enemy.currentHp, enemy.maxHp)}
@@ -1021,7 +1215,7 @@ const BattlePage: React.FC = () => {
       {/* Moves */}
       <div className="glass-morphism rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold">{defeat ? 'All your Pokémon fainted.' : forceSwitch ? 'Your Pokémon fainted! Choose a replacement.' : 'Choose a move'}</h4>
+          <h4 className="font-semibold text-gray-800 dark:text-slate-100">{defeat ? 'All your Pokémon fainted.' : forceSwitch ? 'Your Pokémon fainted! Choose a replacement.' : 'Choose a move'}</h4>
           {(victory || defeat) && (
             <button
               onClick={startNewBattle}
@@ -1052,44 +1246,28 @@ const BattlePage: React.FC = () => {
                 onClick={() => useMove(m)}
                 disabled={disabled}
                 style={disabled ? {} : { backgroundColor: theme.color, boxShadow: `0 2px 0 ${theme.secondary || theme.color}` }}
-                className={`${disabled ? 'bg-gray-400 cursor-not-allowed text-white' : 'text-white hover:brightness-110'} px-3 py-2 rounded-lg font-medium transition flex items-center justify-between gap-2`}
+                className={`${disabled ? 'bg-gray-400 cursor-not-allowed text-white' : 'text-white hover:brightness-110'} relative px-3 py-1 pb-4 rounded-md font-normal transition flex items-center justify-between gap-1 overflow-hidden`}
               >
-                <div className="flex flex-col items-start gap-0.5">
-                  <span className="truncate">{apiUtils.formatPokemonName(m)}</span>
+                <div className="flex flex-col items-start gap-0.5 min-w-0">
+                  <span className="truncate max-w-[9rem] sm:max-w-[12rem] text-sm">{apiUtils.formatPokemonName(m)}</span>
                   <span className="text-[10px] text-black/80">{effLabel}</span>
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-md" style={{ backgroundColor: theme.secondary || theme.color }}>
+                <span className="text-[10px] px-1.5 py-0 rounded-md leading-none shrink-0 whitespace-nowrap absolute bottom-1.5 right-2" style={{ backgroundColor: theme.secondary || theme.color }}>
                   {t.toUpperCase()} {ppLeft !== undefined ? ` • ${ppLeft}/${ppMax}` : ''}
                 </span>
               </button>
             );
           })}
         </div>
-        {/* In-battle catch controls */}
+        {/* In-battle catch controls (no ball selection) */}
         {!victory && !defeat && !forceSwitch && (
           <div className="mt-4 border-t pt-3">
-            <div className="text-sm font-semibold mb-2">Throw Poké Ball</div>
-            <div className="grid grid-cols-3 gap-2 mb-2">
-              {ballOptions
-                .filter(b => b.id === 'poke' || (state.ballInventory?.[b.id] ?? 0) > 0)
-                .map(b => (
-                  <button
-                    key={b.id}
-                    onClick={() => setSelectedBallId(b.id)}
-                    className={`flex items-center gap-2 px-2 py-1 rounded-lg border text-sm justify-center ${selectedBallId === b.id ? 'border-blue-600 ring-2 ring-blue-200' : 'border-gray-300'}`}
-                    style={{ background: '#fff' }}
-                  >
-                    <span className="inline-block w-4 h-4 rounded-full border border-black" style={{ background: `linear-gradient(180deg, ${b.top} 50%, ${b.bottom} 50%)` }} />
-                    <span>{b.name} ({b.id === 'poke' ? '∞' : (state.ballInventory?.[b.id] ?? 0)})</span>
-                  </button>
-                ))}
-            </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-center">
               <button
                 onClick={openCatchMiniGame}
                 disabled={!playerCanAct}
-                className="px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
-              >Open Mini-game</button>
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
+              >Catch</button>
             </div>
           </div>
         )}
@@ -1097,7 +1275,7 @@ const BattlePage: React.FC = () => {
 
       {/* Switch */}
       <div className="glass-morphism rounded-2xl p-4">
-        <h4 className="font-semibold mb-3">Switch Pokémon</h4>
+        <h4 className="font-semibold mb-3 text-gray-800 dark:text-slate-100">Switch Pokémon</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
           {playerParty.map((c, idx) => (
             <button
@@ -1125,35 +1303,51 @@ const BattlePage: React.FC = () => {
       </div>
 
       {/* Rewards Overlay */}
-      {victory && rewards !== null && (
+      {((victory && rewards !== null) || defeat) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <motion.div
-            className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md"
+            className="bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 rounded-2xl shadow-2xl p-6 w-full max-w-md"
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
           >
-            <h3 className="text-xl font-bold mb-2">Battle Rewards</h3>
-            <p className="text-gray-600 mb-4">You received:</p>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {Object.keys(rewards).length === 0 && (
-                <div className="text-gray-500">No items this time. Better luck next battle!</div>
-              )}
-              {Object.entries(rewards).map(([ballId, amount]) => (
-                amount > 0 ? (
-                  <div key={ballId} className="flex items-center gap-2 p-2 rounded-lg border border-gray-200">
-                    <span className="inline-block w-5 h-5 rounded-full border border-black" style={{ background: ballId === 'poke' ? 'linear-gradient(180deg,#ef4444 50%,#ffffff 50%)' : ballId === 'great' ? 'linear-gradient(180deg,#2563eb 50%,#ffffff 50%)' : ballId === 'ultra' ? 'linear-gradient(180deg,#111827 50%,#f59e0b 50%)' : ballId === 'premier' ? 'linear-gradient(180deg,#e5e7eb 50%,#ffffff 50%)' : ballId === 'luxury' ? 'linear-gradient(180deg,#111827 50%,#111827 50%)' : 'linear-gradient(180deg,#ec4899 50%,#f9a8d4 50%)' }} />
-                    <span className="capitalize">{ballId} ball</span>
-                    <span className="ml-auto font-semibold">x{amount}</span>
-                  </div>
-                ) : null
-              ))}
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setRewards(null)}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
-              >Collect</button>
-            </div>
+            <h3 className="text-xl font-bold mb-2">{victory ? 'Battle Rewards' : 'Battle Result'}</h3>
+            {victory && expEarned !== null && (
+              <div className="mb-3 text-sm">
+                <span className="font-semibold">EXP gained:</span> +{expEarned}
+              </div>
+            )}
+            {victory ? (
+              <>
+                <p className="text-gray-600 dark:text-slate-400 mb-2">You received:</p>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {Object.keys(rewards || {}).length === 0 && (
+                    <div className="col-span-2 text-center text-gray-500 dark:text-slate-400">No items this time. Better luck next battle!</div>
+                  )}
+                  {Object.entries(rewards || {}).map(([ballId, amount]) => (
+                    amount > 0 ? (
+                      <div key={ballId} className="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-slate-700">
+                        <span className="inline-block w-5 h-5 rounded-full border border-black" style={{ background: ballId === 'poke' ? 'linear-gradient(180deg,#ef4444 50%,#ffffff 50%)' : ballId === 'great' ? 'linear-gradient(180deg,#2563eb 50%,#ffffff 50%)' : ballId === 'ultra' ? 'linear-gradient(180deg,#111827 50%,#f59e0b 50%)' : ballId === 'premier' ? 'linear-gradient(180deg,#e5e7eb 50%,#ffffff 50%)' : ballId === 'luxury' ? 'linear-gradient(180deg,#111827 50%,#111827 50%)' : 'linear-gradient(180deg,#ec4899 50%,#f9a8d4 50%)' }} />
+                        <span className="capitalize">{ballId} ball</span>
+                        <span className="ml-auto font-semibold">x{amount}</span>
+                      </div>
+                    ) : null
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => { setRewards(null); setExpEarned(null); }}
+                    className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
+                  >Collect</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-600 dark:text-slate-400 mb-4 text-center">All your Pokémon fainted. Go to the Poké Center to recover.</p>
+                <div className="flex justify-center gap-2">
+                  <button onClick={() => { restoreAtPokecenter(); setRewards({}); setExpEarned(null); setDefeat(false); navigate('/'); }} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Go to Poké Center</button>
+                </div>
+              </>
+            )}
           </motion.div>
         </div>
       )}
@@ -1162,13 +1356,13 @@ const BattlePage: React.FC = () => {
       {isCatchOpen && enemy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <motion.div
-            className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
+            className="bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 rounded-2xl shadow-2xl p-8 w-full max-w-md"
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xl font-bold">Catch {apiUtils.formatPokemonName(enemy.pokemon.name)}</h3>
-              <span className="text-sm text-gray-500">HP: {enemy.currentHp}/{enemy.maxHp}</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">HP: {enemy.currentHp}/{enemy.maxHp}</span>
             </div>
             <div className="relative flex items-center justify-center">
               {/* Enemy sprite */}
@@ -1224,11 +1418,11 @@ const BattlePage: React.FC = () => {
             {/* Power bar */}
             {gamePhase !== 'result' && (
               <div className="mt-4">
-                <div className="flex items-center justify-between mb-1 text-sm text-gray-600">
+                <div className="flex items-center justify-between mb-1 text-sm text-gray-600 dark:text-slate-400">
                   <span>Aim</span>
                   <span>Power: {power}%</span>
                 </div>
-                <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div className="w-full h-3 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${power}%`, background: 'linear-gradient(90deg, #34d399, #f59e0b, #ef4444)' }} />
                 </div>
               </div>
@@ -1242,8 +1436,7 @@ const BattlePage: React.FC = () => {
                   <button
                     key={b.id}
                     onClick={() => setSelectedBallId(b.id)}
-                    className={`flex items-center gap-2 px-2 py-1 rounded-lg border text-sm justify-center ${selectedBallId === b.id ? 'border-blue-600 ring-2 ring-blue-200' : 'border-gray-300'}`}
-                    style={{ background: '#fff' }}
+                    className={`flex items-center gap-2 px-2 py-1 rounded-lg border text-sm justify-center bg-white dark:bg-white/10 text-gray-800 dark:text-slate-200 ${selectedBallId === b.id ? 'border-blue-600 ring-2 ring-blue-200' : 'border-gray-300 dark:border-slate-600'}`}
                   >
                     <span className="inline-block w-4 h-4 rounded-full border border-black" style={{ background: `linear-gradient(180deg, ${b.top} 50%, ${b.bottom} 50%)` }} />
                     <span>{b.name} ({b.id === 'poke' ? '∞' : (state.ballInventory?.[b.id] ?? 0)})</span>
@@ -1255,7 +1448,7 @@ const BattlePage: React.FC = () => {
               {gamePhase === 'aim' && (
                 <button onClick={throwBallMiniGame} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-xl">Throw!</button>
               )}
-              <button onClick={closeCatchMiniGame} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-6 rounded-xl">Close</button>
+              <button onClick={closeCatchMiniGame} className="bg-gray-200 hover:bg-gray-300 text-gray-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-200 font-semibold py-2 px-6 rounded-xl">Close</button>
             </div>
 
             {resultText && (
@@ -1267,6 +1460,26 @@ const BattlePage: React.FC = () => {
             )}
           </motion.div>
         </div>
+      )}
+      {pendingMove && (
+        <MoveReplaceModal
+          currentMoves={pendingMove.currentMoves}
+          newMove={pendingMove.newMove}
+          onReplace={(moveToForget) => {
+            // Remove the forgotten move, add the new one
+            const partyRec = state.persistentParty.byId[pendingMove.pokemonId];
+            const moves = { ...partyRec.moves };
+            delete moves[moveToForget];
+            moves[pendingMove.newMove] = { pp: pendingMove.maxPp, maxPp: pendingMove.maxPp };
+            // Update state
+            learnMove(pendingMove.pokemonId, pendingMove.newMove, pendingMove.maxPp);
+            // Remove the forgotten move from persistentParty
+            // (This is a simplified approach; you may want to dispatch a new action for this)
+            setPendingMove(null);
+          }}
+          onSkip={() => setPendingMove(null)}
+          getMoveDetails={getMoveDetails}
+        />
       )}
     </motion.div>
   );

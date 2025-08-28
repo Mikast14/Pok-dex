@@ -168,3 +168,17 @@ export interface Team {
   name: string;
   members: Pokemon[]; // up to 6
 }
+
+export interface MoveDetails {
+  id?: number;
+  name?: string;
+  type?: { name: string };
+  power?: number | null;
+  accuracy?: number | null;
+  pp?: number | null;
+  priority?: number | null;
+  damage_class?: { name: string };
+  effect_entries?: Array<{ effect: string; short_effect: string; language: { name: string } }>;
+  effect_chance?: number | null;
+  target?: { name: string };
+}

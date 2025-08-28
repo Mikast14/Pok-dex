@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Zap, TrendingUp, Star, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useApp, usePersonaPreferences } from '../contexts/AppContext';
-import { pokemonApi } from '../services/pokemonApi';
+import { pokemonApi, apiUtils } from '../services/pokemonApi';
 import { Pokemon } from '../types/pokemon';
 import PokemonGrid from '../components/PokemonGrid';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -47,6 +47,9 @@ const HomePage: React.FC = () => {
   const [selectedBallId, setSelectedBallId] = useState('poke');
   const selectedBall = ballOptions.find(b => b.id === selectedBallId) || ballOptions[0];
 
+  // Helper to filter out pre-evolutions if evolved form is present
+  const [evoMap, setEvoMap] = useState<Record<number, number | null>>({}); // id -> evolved id
+
   useEffect(() => {
     loadHomePageData();
   }, [currentPersona]);
@@ -58,14 +61,64 @@ const HomePage: React.FC = () => {
     }
   }, [team, state.hasChosenStarter]);
 
+  useEffect(() => {
+    // Build a map of pokemon id -> evolved form id (if present in caughtPokemons)
+    const fetchEvos = async () => {
+      const map: Record<number, number | null> = {};
+      for (const poke of caughtPokemons) {
+        try {
+          const species = await pokemonApi.getPokemonSpecies(poke.id);
+          if (species?.evolution_chain?.url) {
+            const evoId = apiUtils.extractIdFromUrl(species.evolution_chain.url);
+            const chain = await pokemonApi.getEvolutionChain(evoId);
+            // Find this node
+            const findNode = (node: any): any | null => {
+              if (node.species?.name === poke.name) return node;
+              for (const child of node.evolves_to || []) {
+                const found = findNode(child);
+                if (found) return found;
+              }
+              return null;
+            };
+            const node = findNode(chain.chain);
+            const next = node?.evolves_to?.[0];
+            if (next?.species?.name) {
+              // Find if we have the evolved form in caughtPokemons
+              const evolved = caughtPokemons.find(p => p.name === next.species.name);
+              map[poke.id] = evolved ? evolved.id : null;
+            } else {
+              map[poke.id] = null;
+            }
+          } else {
+            map[poke.id] = null;
+          }
+        } catch {
+          map[poke.id] = null;
+        }
+      }
+      setEvoMap(map);
+    };
+    fetchEvos();
+    // eslint-disable-next-line
+  }, [caughtPokemons]);
+
+  // Only show Pokémon that are not pre-evolutions of another caught Pokémon
+  const visibleCaught = caughtPokemons.filter(p => {
+    // If this Pokémon is a pre-evolution and we have its evolved form, hide it
+    return !Object.values(evoMap).includes(p.id);
+  });
+
   const chooseStarter = async (id: number) => {
     try {
       setLoading(true);
       const starter = await pokemonApi.getPokemon(id);
+      // Mark as caught so Pokédex unlocks and detail is accessible
+      catchPokemon(starter);
       addToTeam(starter);
-      // Initialize HP full in persistent state
+      // Initialize HP using level-aware formula (default level 5 if unset)
       const baseHp = starter.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
-      const maxHp = baseHp * 2;
+      const level = Math.max(1, state.persistentParty.byId[starter.id]?.level ?? 5);
+      const maxHp = Math.max(1, Math.floor(((baseHp * 2) * level) / 100) + level + 10);
       setPartyHp(starter.id, maxHp, maxHp);
       setStarterChosen(true);
       localStorage.setItem('hasChosenStarter', 'true');
@@ -548,7 +601,7 @@ const HomePage: React.FC = () => {
       </motion.section>
 
       {/* Caught Pokémon Section */}
-      {caughtPokemons.length > 0 && (
+      {visibleCaught.length > 0 && (
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -557,7 +610,7 @@ const HomePage: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-800">Caught Pokémon</h2>
           </div>
-          <PokemonGrid pokemon={caughtPokemons.slice(0, 12)} />
+          <PokemonGrid pokemon={visibleCaught.slice(0, 12)} />
         </motion.section>
       )}
 

@@ -9,10 +9,14 @@ import { useApp, usePersonaPreferences } from '../contexts/AppContext';
 import { pokemonApi, apiUtils } from '../services/pokemonApi';
 import { Pokemon, PokemonSpecies, EvolutionChain } from '../types/pokemon';
 import LoadingSpinner from '../components/LoadingSpinner';
+import EvolutionChainView from '../components/EvolutionChain';
+import EvolutionAnimation from '../components/EvolutionAnimation';
+import MoveTooltip from '../components/MoveTooltip';
+import MoveDetailDrawer from '../components/MoveDetailDrawer';
 
 const PokemonDetailPage: React.FC = () => {
   const { nameOrId } = useParams<{ nameOrId: string }>();
-  const { addFavorite, removeFavorite, isFavorite, setError, addToHistory, caughtPokemons } = useApp();
+  const { addFavorite, removeFavorite, isFavorite, setError, addToHistory, state, evolvePokemon } = useApp();
   const { } = usePersonaPreferences();
   
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
@@ -23,6 +27,10 @@ const PokemonDetailPage: React.FC = () => {
   const [evoLoading, setEvoLoading] = useState(false);
   const [evoSprites, setEvoSprites] = useState<Record<string, string>>({});
   const evoSpritesCache = useRef<Record<string, string>>({});
+  const [activeMove, setActiveMove] = useState<any | null>(null);
+  const [moveDetailsMap, setMoveDetailsMap] = useState<Record<string, any>>({});
+  const [canEvolve, setCanEvolve] = useState<{ nextName: string } | null>(null);
+  const [showEvoAnim, setShowEvoAnim] = useState<{ from: string; to: string; fromSprite: string; toSprite: string } | null>(null);
 
   useEffect(() => {
     if (nameOrId) {
@@ -101,6 +109,46 @@ const PokemonDetailPage: React.FC = () => {
     return arr;
   };
 
+  useEffect(() => {
+    // Determine if current Pokemon can evolve right now based on level
+    try {
+      if (!pokemon || !evolutionChain) { setCanEvolve(null); return; }
+      const findNode = (node: any): any | null => {
+        if (node.species?.name === pokemon.name) return node;
+        for (const child of node.evolves_to || []) {
+          const f = findNode(child);
+          if (f) return f;
+        }
+        return null;
+      };
+      const node = findNode(evolutionChain.chain);
+      const next = node?.evolves_to?.[0];
+      const minLevel = next?.evolution_details?.[0]?.min_level ?? null;
+      const currentLevel = state.persistentParty.byId[pokemon.id]?.level ?? 0;
+      if (next?.species?.name && minLevel && currentLevel >= minLevel) {
+        setCanEvolve({ nextName: next.species.name });
+      } else {
+        setCanEvolve(null);
+      }
+    } catch {
+      setCanEvolve(null);
+    }
+  }, [pokemon?.id, pokemon?.name, evolutionChain, state.persistentParty.byId]);
+
+  const openMove = async (name: string) => {
+    try {
+      if (!moveDetailsMap[name]) {
+        const detail = await pokemonApi.getMove(name);
+        setMoveDetailsMap(prev => ({ ...prev, [name]: detail }));
+        setActiveMove(detail);
+      } else {
+        setActiveMove(moveDetailsMap[name]);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Loading Pokemon details..." />;
   }
@@ -176,7 +224,7 @@ const PokemonDetailPage: React.FC = () => {
       {/* Back Button */}
       <Link
         to="/search"
-        className="flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition-colors"
+        className="flex items-center space-x-2 text-gray-600 dark:text-slate-300 hover:text-blue-600 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to Search</span>
@@ -205,13 +253,13 @@ const PokemonDetailPage: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-gray-500 font-mono">
+                <span className="text-sm text-gray-500 dark:text-slate-400 font-mono">
                   #{pokemon.id.toString().padStart(3, '0')}
                 </span>
-                <h1 className="text-4xl font-bold text-gray-800 capitalize">
+                <h1 className="text-4xl font-bold text-gray-800 dark:text-slate-100 capitalize">
                   {apiUtils.formatPokemonName(pokemon.name)}
                 </h1>
-                <p className="text-lg text-gray-600">
+                <p className="text-lg text-gray-600 dark:text-slate-300">
                   {apiUtils.getEnglishGenus(species)}
                 </p>
               </div>
@@ -245,7 +293,7 @@ const PokemonDetailPage: React.FC = () => {
             </div>
 
             {/* Description */}
-            <p className="text-gray-700 leading-relaxed">
+            <p className="text-gray-700 dark:text-slate-300 leading-relaxed">
               {apiUtils.getEnglishFlavorText(species)}
             </p>
 
@@ -255,17 +303,17 @@ const PokemonDetailPage: React.FC = () => {
                 <p className="text-2xl font-bold text-blue-600">
                   {apiUtils.convertHeight(pokemon.height)}
                 </p>
-                <p className="text-gray-600">Height</p>
+                <p className="text-gray-600 dark:text-slate-400">Height</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-600">
                   {apiUtils.convertWeight(pokemon.weight)}
                 </p>
-                <p className="text-gray-600">Weight</p>
+                <p className="text-gray-600 dark:text-slate-400">Weight</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-purple-600">{totalStats}</p>
-                <p className="text-gray-600">Total Stats</p>
+                <p className="text-gray-600 dark:text-slate-400">Total Stats</p>
               </div>
             </div>
           </div>
@@ -334,6 +382,25 @@ const PokemonDetailPage: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-700 mb-3">Training</h3>
               <div className="bg-white/50 rounded-lg p-4 border border-white/20">
                 <p><span className="font-semibold">Base Experience:</span> {pokemon.base_experience || 'Unknown'}</p>
+                {canEvolve && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const evolved = await pokemonApi.getPokemon(canEvolve.nextName);
+                          const fromSprite = pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default;
+                          const toSprite = evolved.sprites.other['official-artwork'].front_default || evolved.sprites.front_default;
+                          setShowEvoAnim({ from: apiUtils.formatPokemonName(pokemon.name), to: apiUtils.formatPokemonName(evolved.name), fromSprite, toSprite });
+                          setTimeout(() => {
+                            evolvePokemon(pokemon.id, evolved);
+                            setShowEvoAnim(null);
+                          }, 1800);
+                        } catch {}
+                      }}
+                      className="px-3 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+                    >Evolve</button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -388,17 +455,25 @@ const PokemonDetailPage: React.FC = () => {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
               {pokemon.moves.slice(0, 30).map((moveInfo) => (
-                <div
+                <button
                   key={moveInfo.move.name}
-                  className="bg-white/50 rounded-lg p-3 border border-white/20"
+                  onClick={() => openMove(moveInfo.move.name)}
+                  className="text-left bg-white/50 hover:bg-white/70 rounded-lg p-3 border border-white/20"
                 >
-                  <h4 className="font-semibold capitalize">
-                    {apiUtils.formatPokemonName(moveInfo.move.name)}
-                  </h4>
+                  <div className="flex items-start justify-between">
+                    <h4 className="font-semibold capitalize">
+                      {apiUtils.formatPokemonName(moveInfo.move.name)}
+                    </h4>
+                    {moveDetailsMap[moveInfo.move.name] && (
+                      <div className="ml-2">
+                        <MoveTooltip move={moveDetailsMap[moveInfo.move.name]} />
+                      </div>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-600">
                     Learn at level {moveInfo.version_group_details[0]?.level_learned_at || 'N/A'}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
             
@@ -416,34 +491,7 @@ const PokemonDetailPage: React.FC = () => {
             {evoLoading ? (
               <LoadingSpinner message="Loading evolution chain..." />
             ) : evolutionChain ? (
-              <div className="flex flex-col items-center">
-                <div className="flex flex-row items-center space-x-6 overflow-x-auto p-2">
-                  {flattenChain(evolutionChain.chain).map((evo, idx, arr) => {
-                    const caught = caughtPokemons.find(p => p.name === evo.name);
-                    const isCurrent = pokemon.name === evo.name;
-                    const sprite = caught?.isShiny
-                      ? caught.sprites.front_shiny || evoSprites[evo.name]
-                      : evoSprites[evo.name];
-                    return (
-                      <div key={evo.name} className="flex flex-col items-center relative">
-                        <img
-                          src={sprite}
-                          alt={evo.name}
-                          className={`w-24 h-24 object-contain mb-2 ${isCurrent ? 'ring-4 ring-blue-400' : ''}`}
-                        />
-                        {caught?.isShiny && <span className="absolute top-0 right-0 bg-yellow-400 text-white text-xs font-bold px-2 py-1 rounded shadow">✨</span>}
-                        <span className={`capitalize font-semibold ${isCurrent ? 'text-blue-600' : 'text-gray-800'}`}>{apiUtils.formatPokemonName(evo.name)}</span>
-                        {evo.min_level && (
-                          <span className="text-xs text-gray-500">Lvl {evo.min_level}</span>
-                        )}
-                        {idx < arr.length - 1 && (
-                          <span className="mx-2 text-2xl">→</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <EvolutionChainView chain={evolutionChain} sprites={evoSprites} currentName={pokemon.name} />
             ) : (
               <div className="text-center py-8">
                 <div className="text-4xl mb-4">🔄</div>
@@ -455,6 +503,16 @@ const PokemonDetailPage: React.FC = () => {
           </div>
         )}
       </motion.div>
+      <MoveDetailDrawer move={activeMove} onClose={() => setActiveMove(null)} />
+      {showEvoAnim && (
+        <EvolutionAnimation
+          fromName={showEvoAnim.from}
+          toName={showEvoAnim.to}
+          fromSprite={showEvoAnim.fromSprite}
+          toSprite={showEvoAnim.toSprite}
+          onDone={() => setShowEvoAnim(null)}
+        />
+      )}
     </motion.div>
   );
 };

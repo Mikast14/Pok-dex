@@ -48,8 +48,8 @@ const PokemonGrid: React.FC<PokemonGridProps> = ({
         animate={{ opacity: 1, y: 0 }}
       >
         <div className="text-6xl mb-4">😔</div>
-        <h3 className="text-xl font-semibold text-gray-700 mb-2">No Pokemon Found</h3>
-        <p className="text-gray-500 max-w-md mx-auto">{emptyMessage}</p>
+        <h3 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-2">No Pokemon Found</h3>
+        <p className="text-gray-500 dark:text-slate-400 max-w-md mx-auto">{emptyMessage}</p>
       </motion.div>
     );
   }

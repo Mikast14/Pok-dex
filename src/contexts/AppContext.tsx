@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode } from 'react';
+import { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
 import { Pokemon, UserPersona, PokemonType } from '../types/pokemon';
 
 // Define user personas based on challenge requirements
@@ -43,7 +43,8 @@ export const USER_PERSONAS: UserPersona[] = [
 
 interface PersonaCollections {
   favorites: Pokemon[];
-  caughtPokemons: Pokemon[];
+  caughtPokemons: Pokemon[]; // current box/party
+  pokedex: Pokemon[]; // all ever caught or evolved
   team: Pokemon[];
 }
 
@@ -56,7 +57,7 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
   persistentParty: {
-    byId: Record<number, { currentHp: number; maxHp: number; moves: Record<string, { pp: number; maxPp: number }>; ballId?: string }>;
+    byId: Record<number, { currentHp: number; maxHp: number; moves: Record<string, { pp: number; maxPp: number }>; ballId?: string; level?: number; exp?: number }>;
   };
   ballInventory: Record<string, number>; // 'poke' may be -1 to represent unlimited
   hasChosenStarter: boolean;
@@ -85,10 +86,14 @@ type AppAction =
   | { type: 'DECREMENT_BALL'; payload: { ballId: string; amount?: number } }
   | { type: 'ADD_BALLS'; payload: Record<string, number> }
   | { type: 'SET_STARTER_CHOSEN'; payload: boolean }
-  | { type: 'RESTORE_AT_POKECENTER' };
+  | { type: 'RESTORE_AT_POKECENTER' }
+  | { type: 'GAIN_LEVEL'; payload: { pokemonId: number; amount?: number } }
+  | { type: 'LEARN_MOVE'; payload: { pokemonId: number; moveName: string; maxPp: number } }
+  | { type: 'EVOLVE_POKEMON'; payload: { oldId: number; newPokemon: Pokemon } }
+  | { type: 'GAIN_EXP'; payload: { pokemonId: number; amount: number } };
 
 const makePersonaData = () => Object.fromEntries(
-  USER_PERSONAS.map(p => [p.id, { favorites: [], caughtPokemons: [], team: [] }])
+  USER_PERSONAS.map(p => [p.id, { favorites: [], caughtPokemons: [], pokedex: [], team: [] }])
 );
 
 const initialState: AppState = {
@@ -103,6 +108,14 @@ const initialState: AppState = {
   ballInventory: { poke: -1, great: 3, ultra: 3, premier: 3, luxury: 3, heal: 3 },
   hasChosenStarter: false,
 };
+
+const LOCAL_STORAGE_KEY = 'deepdive_personaData';
+
+// Simple leveling curve: EXP needed for next level
+function expForNextLevel(level: number): number {
+  // Scales moderately; tweak as desired
+  return 100 + (level - 1) * 50;
+}
 
 function appReducer(state: AppState, action: AppAction): AppState {
   const personaId = state.currentPersona.id;
@@ -131,10 +144,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'CATCH_POKEMON': {
       const caught = personaData[personaId].caughtPokemons;
+      const pokedex = personaData[personaId].pokedex;
       if (caught.some(p => p.id === action.payload.id)) return state;
       personaData[personaId] = {
         ...personaData[personaId],
         caughtPokemons: [...caught, action.payload],
+        pokedex: pokedex.some(p => p.id === action.payload.id) ? pokedex : [...pokedex, action.payload],
       };
       return { ...state, personaData };
     }
@@ -172,7 +187,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_PARTY_HP': {
       const { pokemonId, currentHp, maxHp } = action.payload;
       const byId = { ...state.persistentParty.byId };
-      const existing = byId[pokemonId] || { currentHp: maxHp, maxHp, moves: {} };
+      const existing = byId[pokemonId] || { currentHp: maxHp, maxHp, moves: {}, level: 5, exp: 0 };
       byId[pokemonId] = { ...existing, currentHp, maxHp };
       return { ...state, persistentParty: { byId } };
     }
@@ -201,7 +216,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_POKEBALL': {
       const { pokemonId, ballId } = action.payload;
       const byId = { ...state.persistentParty.byId };
-      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {} };
+      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
       byId[pokemonId] = { ...existing, ballId };
       return { ...state, persistentParty: { byId } };
     }
@@ -225,6 +240,89 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_STARTER_CHOSEN': {
       return { ...state, hasChosenStarter: action.payload };
     }
+    case 'GAIN_LEVEL': {
+      const { pokemonId, amount = 1 } = action.payload;
+      const byId = { ...state.persistentParty.byId };
+      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
+      const nextLevel = Math.max(1, (existing.level ?? 5) + amount);
+      byId[pokemonId] = { ...existing, level: nextLevel };
+      return { ...state, persistentParty: { byId } };
+    }
+    case 'LEARN_MOVE': {
+      const { pokemonId, moveName, maxPp } = action.payload;
+      const byId = { ...state.persistentParty.byId };
+      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
+      const moves = { ...existing.moves };
+      if (!moves[moveName]) {
+        moves[moveName] = { pp: maxPp, maxPp };
+      }
+      byId[pokemonId] = { ...existing, moves };
+      return { ...state, persistentParty: { byId } };
+    }
+    case 'EVOLVE_POKEMON': {
+      const { oldId, newPokemon } = action.payload;
+      const personaId2 = state.currentPersona.id;
+      const personaData2 = { ...state.personaData };
+      const collections = { ...personaData2[personaId2] };
+      // Team: remove all instances of oldId, then ensure new is present once
+      collections.team = collections.team.filter(p => p.id !== oldId);
+      if (!collections.team.some(p => p.id === newPokemon.id)) {
+        collections.team.push(newPokemon);
+      }
+      // Caught: replace old with new
+      let caught = collections.caughtPokemons.filter(p => p.id !== oldId);
+      if (!caught.some(p => p.id === newPokemon.id)) {
+        caught.push(newPokemon);
+      }
+      collections.caughtPokemons = caught;
+      // Pokedex: add new if not present, keep all old (never remove oldId)
+      let pokedex = [...(collections.pokedex || [])];
+      if (!pokedex.some(p => p.id === newPokemon.id)) {
+        pokedex.push(newPokemon);
+      }
+      // Do NOT remove oldId from pokedex
+      collections.pokedex = pokedex;
+      personaData2[personaId2] = collections;
+
+      // Move persistentParty record to new id, preserving HP ratio, moves and level
+      const byId = { ...state.persistentParty.byId };
+      const existing = byId[oldId];
+      if (existing) {
+        const ratio = existing.maxHp > 0 ? Math.max(0, Math.min(1, existing.currentHp / existing.maxHp)) : 1;
+        const baseHp = newPokemon.stats.find(s => s.stat.name === 'hp')?.base_stat || existing.maxHp / 2 || 50;
+        const newMax = baseHp * 2;
+        const newCur = Math.round(newMax * ratio);
+        byId[newPokemon.id] = { ...existing, currentHp: newCur, maxHp: newMax };
+        delete byId[oldId];
+      }
+      return { ...state, personaData: personaData2, persistentParty: { byId } };
+    }
+    case 'GAIN_EXP': {
+      const { pokemonId, amount } = (action as any).payload as { pokemonId: number; amount: number };
+      const byId = { ...state.persistentParty.byId };
+      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
+      let level = existing.level ?? 5;
+      let exp = (existing.exp ?? 0) + Math.max(0, amount);
+      // Level up while enough EXP
+      while (exp >= expForNextLevel(level)) {
+        exp -= expForNextLevel(level);
+        level += 1;
+      }
+      byId[pokemonId] = { ...existing, level, exp };
+      return { ...state, persistentParty: { byId } };
+    }
+    case 'LEARN_MOVE': {
+      const { pokemonId, moveName, maxPp } = action.payload;
+      const byId = { ...state.persistentParty.byId };
+      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
+      const moves = { ...existing.moves };
+      if (!moves[moveName]) {
+        moves[moveName] = { pp: maxPp, maxPp };
+      }
+      byId[pokemonId] = { ...existing, moves };
+      return { ...state, persistentParty: { byId } };
+    }
+    
     case 'RESTORE_AT_POKECENTER': {
       const byId = { ...state.persistentParty.byId };
       Object.keys(byId).forEach(k => {
@@ -320,16 +418,34 @@ interface AppContextType {
   decrementBall: (ballId: string, amount?: number) => void;
   addBalls: (rewards: Record<string, number>) => void;
   setStarterChosen: (chosen: boolean) => void;
+  gainLevel: (pokemonId: number, amount?: number) => void;
+  learnMove: (pokemonId: number, moveName: string, maxPp: number) => void;
+  evolvePokemon: (oldId: number, newPokemon: Pokemon) => void;
+  gainExp: (pokemonId: number, amount: number) => void;
+  pokedex: Pokemon[];
+  isInPokedex: (pokemonId: number) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  // Load from localStorage if present
+  const savedPersonaData = (() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return undefined;
+  })();
+  const [state, dispatch] = useReducer(appReducer, {
+    ...initialState,
+    personaData: savedPersonaData || initialState.personaData,
+  });
   const personaId = state.currentPersona.id;
   const favorites = state.personaData[personaId]?.favorites || [];
   const caughtPokemons = state.personaData[personaId]?.caughtPokemons || [];
   const team = state.personaData[personaId]?.team || [];
+  const pokedex = state.personaData[personaId]?.pokedex || [];
 
   const contextValue: AppContextType = {
     state,
@@ -362,7 +478,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     decrementBall: (ballId, amount) => dispatch({ type: 'DECREMENT_BALL', payload: { ballId, amount } }),
     addBalls: (rewards) => dispatch({ type: 'ADD_BALLS', payload: rewards }),
     setStarterChosen: (chosen) => dispatch({ type: 'SET_STARTER_CHOSEN', payload: chosen }),
+    gainLevel: (pokemonId, amount) => dispatch({ type: 'GAIN_LEVEL', payload: { pokemonId, amount } }),
+    learnMove: (pokemonId, moveName, maxPp) => dispatch({ type: 'LEARN_MOVE', payload: { pokemonId, moveName, maxPp } }),
+    evolvePokemon: (oldId, newPokemon) => dispatch({ type: 'EVOLVE_POKEMON', payload: { oldId, newPokemon } }),
+    gainExp: (pokemonId, amount) => dispatch({ type: 'GAIN_EXP', payload: { pokemonId, amount } }),
+    pokedex,
+    isInPokedex: (pokemonId) => pokedex.some(p => p.id === pokemonId),
   };
+
+  // Persist personaData to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state.personaData));
+    } catch {}
+  }, [state.personaData]);
 
   return (
     <AppContext.Provider value={contextValue}>

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Pokemon, PokemonListResponse, PokemonSpecies, EvolutionChain } from '../types/pokemon';
+import { Pokemon, PokemonListResponse, PokemonSpecies, EvolutionChain, MoveDetails } from '../types/pokemon';
 
 const BASE_URL = 'https://pokeapi.co/api/v2';
 
@@ -101,7 +101,7 @@ export const pokemonApi = {
   }
   ,
   // Get move details (type, power, damage class, etc.)
-  async getMove(nameOrId: string | number): Promise<{ type: { name: string }; power?: number | null; pp?: number | null; damage_class?: { name: string } }> {
+  async getMove(nameOrId: string | number): Promise<MoveDetails> {
     const response = await api.get(`/move/${nameOrId}`);
     return response.data;
   }

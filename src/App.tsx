@@ -1,4 +1,5 @@
 
+import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { AppProvider } from './contexts/AppContext';
@@ -9,15 +10,28 @@ import FavoritesPage from './pages/FavoritesPage';
 import SearchPage from './pages/SearchPage';
 import PersonaSelector from './components/PersonaSelector';
 import ErrorBoundary from './components/ErrorBoundary';
-import TeamBuilderPage from './pages/TeamBuilderPage';
-import BattlePage from './pages/BattlePage';
+import TeamBuilderPage from './pages/TeamBuilderPage.tsx';
+import BattlePage from './pages/BattlePage.tsx';
+import TeamMemberDetailPage from './pages/TeamMemberDetailPage.tsx';
+import LevelPanel from './components/LevelPanel';
 import './App.css';
 
 function App() {
+  const [showLevelPanel, setShowLevelPanel] = React.useState(false);
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'q' && e.shiftKey) {
+        e.preventDefault();
+        setShowLevelPanel(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   return (
     <ErrorBoundary>
       <AppProvider>
-        <div className="App min-h-screen bg-gradient-to-br from-blue-100 via-purple-50 to-pink-100">
+        <div className="App min-h-screen">
           {/* Background decoration */}
           <div className="fixed inset-0 overflow-hidden pointer-events-none">
             <motion.div
@@ -58,10 +72,12 @@ function App() {
                 <Route path="/favorites" element={<FavoritesPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/team" element={<TeamBuilderPage />} />
+                <Route path="/team/:id" element={<TeamMemberDetailPage />} />
                 <Route path="/battle" element={<BattlePage />} />
               </Routes>
             </main>
           </div>
+          <LevelPanel isOpen={showLevelPanel} onClose={() => setShowLevelPanel(false)} />
         </div>
       </AppProvider>
     </ErrorBoundary>

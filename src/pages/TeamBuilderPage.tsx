@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../contexts/AppContext';
 import { motion } from 'framer-motion';
 import PokemonCard from '../components/PokemonCard';
+import { Link } from 'react-router-dom';
 
 const TeamBuilderPage: React.FC = () => {
   const { caughtPokemons, team, addToTeam, removeFromTeam, clearTeam } = useApp();
@@ -22,7 +23,9 @@ const TeamBuilderPage: React.FC = () => {
         <div className="flex flex-wrap gap-4 mb-2">
           {team.map(poke => (
             <div key={poke.id} className="relative">
-              <PokemonCard pokemon={poke} />
+              <Link to={`/team/${poke.id}`}>
+                <PokemonCard pokemon={poke} disableLink={true} />
+              </Link>
               {poke.isShiny && (
                 <span className="absolute top-2 right-2 bg-yellow-400 text-white text-xs font-bold px-2 py-1 rounded shadow">✨ Shiny</span>
               )}
@@ -47,7 +50,9 @@ const TeamBuilderPage: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {caughtPokemons.map(poke => (
             <div key={poke.id} className={`relative ${isInTeam(poke.id) ? 'ring-4 ring-blue-400' : ''}`}>
-              <PokemonCard pokemon={poke} />
+              <Link to={`/team/${poke.id}`}>
+                <PokemonCard pokemon={poke} disableLink={true} />
+              </Link>
               {poke.isShiny && (
                 <span className="absolute top-2 right-2 bg-yellow-400 text-white text-xs font-bold px-2 py-1 rounded shadow">✨ Shiny</span>
               )}

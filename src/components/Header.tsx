@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Heart, Home, Zap } from 'lucide-react';
+import { Search, Heart, Home, Zap, Moon, Sun } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 
 const Header: React.FC = () => {
@@ -15,6 +15,23 @@ const Header: React.FC = () => {
     { path: '/team', icon: Zap, label: 'My Team' },
     { path: '/battle', icon: Zap, label: 'Battle' },
   ];
+
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    setIsDark(prev => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
 
   return (
     <motion.header
@@ -97,11 +114,22 @@ const Header: React.FC = () => {
             })}
           </nav>
 
+          {/* Theme toggle */}
+          <div className="flex items-center space-x-2">
+            <button
+              aria-label="Toggle theme"
+              onClick={toggleTheme}
+              className="px-3 py-2 rounded-xl bg-white/30 dark:bg-white/10 text-gray-700 dark:text-slate-200 hover:bg-white/40 dark:hover:bg-white/20 transition"
+            >
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+          </div>
+
           {/* Current persona indicator */}
           <div className="hidden lg:flex items-center space-x-3">
             <div className="text-right">
-              <p className="text-sm text-gray-600">Playing as</p>
-              <p className="font-semibold text-gray-800">
+              <p className="text-sm text-gray-600 dark:text-slate-400">Playing as</p>
+              <p className="font-semibold text-gray-800 dark:text-slate-100">
                 {state.currentPersona.name}
               </p>
             </div>

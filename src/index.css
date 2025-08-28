@@ -3,8 +3,35 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-start: 247 245 255; /* blue-100 */
+    --bg-mid: 245 243 255;   /* purple-50 */
+    --bg-end: 255 240 245;   /* pink-100 */
+    --card-bg: 255 255 255;
+    --text: 17 24 39;        /* gray-900 */
+    --muted: 75 85 99;       /* gray-600 */
+    --glass: 255 255 255 / 0.25;
+    --glass-border: 255 255 255 / 0.18;
+  }
+
+  .dark {
+    --bg-start: 3 7 18;      /* slate-950 */
+    --bg-mid: 15 23 42;      /* slate-900 */
+    --bg-end: 30 41 59;      /* slate-800 */
+    --card-bg: 15 23 42;
+    --text: 226 232 240;     /* slate-200 */
+    --muted: 148 163 184;    /* slate-400 */
+    --glass: 15 23 42 / 0.5;
+    --glass-border: 148 163 184 / 0.25;
+  }
+
   body {
-    @apply bg-gradient-to-br from-blue-100 via-purple-50 to-pink-100 min-h-screen;
+    @apply min-h-screen text-gray-900 dark:text-slate-200;
+    background-image: linear-gradient(to bottom right,
+      rgb(var(--bg-start)),
+      rgb(var(--bg-mid)),
+      rgb(var(--bg-end))
+    );
     font-family: 'Orbitron', monospace;
   }
 }
@@ -23,8 +50,8 @@
   }
   
   .pokemon-card {
-    @apply bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105;
-    background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+    @apply rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-gray-900 dark:text-slate-200;
+    background: linear-gradient(145deg, rgb(var(--card-bg)) 0%, rgba(var(--card-bg) / 0.9) 100%);
   }
   
   .type-badge {
@@ -32,9 +59,10 @@
   }
   
   .glass-morphism {
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in oklab, transparent, rgb(var(--glass)) 100%);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid color-mix(in oklab, transparent, rgb(var(--glass-border)) 100%);
+    color: inherit;
   }
 }
 

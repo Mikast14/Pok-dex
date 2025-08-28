@@ -160,7 +160,7 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
         </div>
 
         {/* Pokemon Name */}
-        <h3 className="text-lg font-bold text-gray-800 mb-2 capitalize group-hover:text-blue-600 transition-colors">
+        <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100 mb-2 capitalize group-hover:text-blue-600 transition-colors">
           {apiUtils.formatPokemonName(pokemon.name)}
         </h3>
 
@@ -185,10 +185,10 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
                   <span style={{ color: getTypeColor(getPrimaryType()) }}>
                     {getStatIcon(stat.stat.name)}
                   </span>
-                  <span className="text-gray-600 truncate">
+                  <span className="text-gray-600 dark:text-slate-300 truncate">
                     {apiUtils.formatStatName(stat.stat.name)}
                   </span>
-                  <span className="font-semibold text-gray-800 ml-auto">
+                  <span className="font-semibold text-gray-800 dark:text-slate-100 ml-auto">
                     {stat.base_stat}
                   </span>
                 </div>
