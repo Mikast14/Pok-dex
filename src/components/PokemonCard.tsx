@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Heart, Zap, Shield, Swords, Eye } from 'lucide-react';
+import { Heart, Zap, Shield, Swords, Eye, Star } from 'lucide-react';
 import { Pokemon } from '../types/pokemon';
 import { useApp, usePersonaPreferences } from '../contexts/AppContext';
 import { apiUtils } from '../services/pokemonApi';
+import { getNatureStatModifier } from '../data/natures';
 
 interface PokemonCardProps {
   pokemon: Pokemon;
@@ -86,6 +87,14 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
   };
 
   const getImageUrl = () => {
+    // Check if this Pokémon is shiny and return appropriate sprite
+    if (pokemon.isShiny) {
+      return pokemon.sprites.other['official-artwork'].front_shiny ||
+             pokemon.sprites.front_shiny ||
+             pokemon.sprites.other['official-artwork'].front_default ||
+             pokemon.sprites.front_default ||
+             '/placeholder-pokemon.png';
+    }
     return pokemon.sprites.other['official-artwork'].front_default ||
            pokemon.sprites.front_default ||
            '/placeholder-pokemon.png';
@@ -128,10 +137,7 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
         />
       </motion.button>
 
-      {/* Pokemon ID */}
-      <div className="absolute top-3 left-3 bg-black/20 text-white text-xs font-mono px-2 py-1 rounded">
-        #{pokemon.id.toString().padStart(3, '0')}
-      </div>
+
 
       <div className="p-4 h-full flex flex-col">
         {/* Pokemon Image */}
@@ -157,6 +163,35 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
           ) : (
             <div className="text-6xl">❓</div>
           )}
+          
+          {/* Shiny sparkles */}
+          {pokemon.isShiny && (
+            <div className="absolute inset-0 pointer-events-none">
+              {[0, 1, 2].map(i => (
+                <motion.div
+                  key={i}
+                  className="absolute text-yellow-300 text-lg"
+                  style={{
+                    top: `${20 + (i * 25)}%`,
+                    left: `${15 + (i * 20)}%`,
+                  }}
+                  animate={{
+                    opacity: [0, 1, 0],
+                    scale: [0.5, 1.2, 0.5],
+                    rotate: [0, 180, 360],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    delay: i * 0.6,
+                    ease: "easeInOut"
+                  }}
+                >
+                  ✨
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pokemon Name */}
@@ -165,7 +200,7 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
         </h3>
 
         {/* Pokemon Types */}
-        <div className="flex flex-wrap gap-1 mb-3">
+        <div className="flex flex-wrap gap-1 mb-2">
           {pokemon.types.map((typeInfo) => (
             <span
               key={typeInfo.type.name}
@@ -177,22 +212,60 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
           ))}
         </div>
 
+        {/* Compact Nature Display */}
+        {pokemon.nature && (
+          <div className="mb-2">
+            <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-slate-400">
+              <Star className="w-3 h-3 text-purple-500" />
+              <span className="font-medium">{pokemon.nature.name}</span>
+              {pokemon.nature.increasedStat && (
+                <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-1.5 py-0.5 rounded">
+                  +{pokemon.nature.increasedStat}
+                </span>
+              )}
+              {pokemon.nature.decreasedStat && (
+                <span className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded">
+                  -{pokemon.nature.decreasedStat}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+
+
         {(personalizedView.showDetailedStats || showDetailedStats) && (
           <div className="mt-auto space-y-2">
             <div className="grid grid-cols-2 gap-2 text-xs">
-              {pokemon.stats.slice(0, 4).map((stat) => (
-                <div key={stat.stat.name} className="flex items-center space-x-1">
-                  <span style={{ color: getTypeColor(getPrimaryType()) }}>
-                    {getStatIcon(stat.stat.name)}
-                  </span>
-                  <span className="text-gray-600 dark:text-slate-300 truncate">
-                    {apiUtils.formatStatName(stat.stat.name)}
-                  </span>
-                  <span className="font-semibold text-gray-800 dark:text-slate-100 ml-auto">
-                    {stat.base_stat}
-                  </span>
-                </div>
-              ))}
+              {pokemon.stats.slice(0, 4).map((stat) => {
+                const natureModifier = pokemon.nature ? getNatureStatModifier(pokemon.nature, stat.stat.name) : 1;
+                const modifiedStat = Math.floor(stat.base_stat * natureModifier);
+                const isIncreased = pokemon.nature?.increasedStat === stat.stat.name;
+                const isDecreased = pokemon.nature?.decreasedStat === stat.stat.name;
+                
+                return (
+                  <div key={stat.stat.name} className="flex items-center space-x-1">
+                    <span style={{ color: getTypeColor(getPrimaryType()) }}>
+                      {getStatIcon(stat.stat.name)}
+                    </span>
+                    <span className="text-gray-600 dark:text-slate-300 truncate">
+                      {apiUtils.formatStatName(stat.stat.name)}
+                    </span>
+                    <span className={`font-semibold ml-auto ${
+                      isIncreased ? 'text-green-600 dark:text-green-400' :
+                      isDecreased ? 'text-red-600 dark:text-red-400' :
+                      'text-gray-800 dark:text-slate-100'
+                    }`}>
+                      {modifiedStat}
+                      {natureModifier !== 1 && (
+                        <span className="text-xs ml-1">
+                          ({natureModifier > 1 ? '+' : ''}{Math.round((natureModifier - 1) * 100)}%)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -208,7 +281,7 @@ const PokemonCard: React.FC<PokemonCardProps> = ({
   }
 
   return (
-    <Link to={`/pokemon/${pokemon.name}`} onClick={handleCardClick}>
+    <Link to={`/pokemon/${pokemon.instanceId || pokemon.id}`} onClick={handleCardClick}>
       {CardInner}
     </Link>
   );

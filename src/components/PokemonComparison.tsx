@@ -141,9 +141,6 @@ const PokemonComparison: React.FC<PokemonComparisonProps> = ({
                         <h3 className="font-bold text-gray-800 capitalize">
                           {apiUtils.formatPokemonName(pokemon.name)}
                         </h3>
-                        <p className="text-sm text-gray-600">
-                          #{pokemon.id.toString().padStart(3, '0')}
-                        </p>
                         
                         {/* Types */}
                         <div className="flex justify-center space-x-1 mt-2">

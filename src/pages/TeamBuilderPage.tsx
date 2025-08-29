@@ -1,18 +1,74 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { motion } from 'framer-motion';
 import PokemonCard from '../components/PokemonCard';
 import { Link } from 'react-router-dom';
-import { Search, X, ArrowUpDown, GripVertical } from 'lucide-react';
+import { Search, X, ArrowUpDown, GripVertical, Zap } from 'lucide-react';
 import { PokemonType } from '../types/pokemon';
+import { pokemonApi } from '../services/pokemonApi';
 
 const TeamBuilderPage: React.FC = () => {
-  const { caughtPokemons, team, addToTeam, removeFromTeam, clearTeam, reorderTeam, state } = useApp();
+  const { caughtPokemons, team, addToTeam, removeFromTeam, clearTeam, reorderTeam, state, isInTeamByInstance, catchPokemon } = useApp();
   const [nameFilter, setNameFilter] = useState('');
   const [levelSort, setLevelSort] = useState<'none' | 'high-to-low' | 'low-to-high' | 'newest-first'>('none');
   const [selectedTypes, setSelectedTypes] = useState<PokemonType[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [renderKey, setRenderKey] = useState(0);
+  
+  // Cheat code system
+  const [showCheatCode, setShowCheatCode] = useState(false);
+  const [cheatCode, setCheatCode] = useState('');
+  const [cheatMessage, setCheatMessage] = useState('');
+  const [isLoadingCheat, setIsLoadingCheat] = useState(false);
+  
+  // Force re-render when team changes to fix visual duplication
+  useEffect(() => {
+    setRenderKey(prev => prev + 1);
+  }, [team.length, team.map(p => p.instanceId).join(',')]);
+
+  // Cheat code keyboard shortcut (Ctrl+Shift+C)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        setShowCheatCode(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Handle cheat code submission
+  const handleCheatCode = async () => {
+    if (!cheatCode.trim()) return;
+    
+    setIsLoadingCheat(true);
+    setCheatMessage('');
+    
+    try {
+      const pokemonName = cheatCode.trim().toLowerCase();
+      const pokemon = await pokemonApi.getPokemon(pokemonName);
+      
+      // Add the Pokémon to caught list and team
+      catchPokemon(pokemon);
+      
+      if (team.length < 6) {
+        addToTeam(pokemon);
+        setCheatMessage(`✨ Added ${pokemon.name} to your team!`);
+      } else {
+        setCheatMessage(`✨ Caught ${pokemon.name}! Team is full, but it's in your collection.`);
+      }
+      
+      setCheatCode('');
+      setTimeout(() => setShowCheatCode(false), 2000);
+    } catch (error) {
+      setCheatMessage('❌ Pokémon not found. Try a different name or ID.');
+    } finally {
+      setIsLoadingCheat(false);
+    }
+  };
 
   // Pokémon types and colors (same as SearchPage)
   const pokemonTypes: PokemonType[] = [
@@ -124,8 +180,43 @@ const TeamBuilderPage: React.FC = () => {
 
   // Filter and sort caught Pokémon (excluding team members)
   const filteredAndSortedPokemons = (() => {
-    // First, filter out Pokémon that are already in the team
-    const availablePokemon = caughtPokemons.filter(poke => !isInTeam(poke.id));
+    // First, filter out Pokémon that are already in the team by instanceId
+    const availablePokemon = caughtPokemons.filter(poke => {
+      // If no instanceId, fall back to checking by species ID
+      if (!poke.instanceId) {
+        const isInTeamResult = isInTeam(poke.id);
+        return !isInTeamResult;
+      }
+      
+      // Check if this specific Pokémon instance is in the team
+      const isInTeamByInstanceResult = isInTeamByInstance(poke.instanceId);
+      
+      // Also check if there's a Pokémon with the same species ID, shiny status, and nature in the team
+      // This is a fallback in case instanceId comparison fails
+      const hasMatchingPokemonInTeam = team.some(teamMember => 
+        teamMember.id === poke.id && 
+        teamMember.isShiny === poke.isShiny &&
+        teamMember.nature?.name === poke.nature?.name
+      );
+      
+      // Debug logging for problematic cases
+      if (poke.isShiny && isInTeamByInstanceResult === false && hasMatchingPokemonInTeam) {
+        console.log('Shiny Pokemon found by fallback check:', {
+          pokemonName: poke.name,
+          pokemonInstanceId: poke.instanceId,
+          pokemonNature: poke.nature?.name,
+          teamInstanceIds: team.map(p => p.instanceId),
+          teamShinies: team.filter(p => p.isShiny).map(p => ({ 
+            name: p.name, 
+            instanceId: p.instanceId,
+            nature: p.nature?.name 
+          }))
+        });
+      }
+      
+      // Return false if either check indicates the Pokémon is in the team
+      return !isInTeamByInstanceResult && !hasMatchingPokemonInTeam;
+    });
     
     // Then, filter by name and types
     const filtered = availablePokemon.filter(poke => {
@@ -146,8 +237,8 @@ const TeamBuilderPage: React.FC = () => {
     }
 
     return [...filtered].sort((a, b) => {
-      const levelA = state.persistentParty.byId[a.id]?.level ?? 5;
-      const levelB = state.persistentParty.byId[b.id]?.level ?? 5;
+      const levelA = state.persistentParty.byId[`${a.id}-${a.isShiny ? 'shiny' : 'normal'}` as any]?.level ?? 5;
+      const levelB = state.persistentParty.byId[`${b.id}-${b.isShiny ? 'shiny' : 'normal'}` as any]?.level ?? 5;
       
       if (levelSort === 'high-to-low') {
         return levelB - levelA;
@@ -156,6 +247,31 @@ const TeamBuilderPage: React.FC = () => {
       }
     });
   })();
+
+  // Debug logging for team state
+  useEffect(() => {
+    console.log('TeamBuilderPage Debug:', {
+      teamLength: team.length,
+      teamMembers: team.map(p => ({
+        id: p.id,
+        name: p.name,
+        isShiny: p.isShiny,
+        instanceId: p.instanceId
+      })),
+      caughtPokemonsLength: caughtPokemons.length,
+      availablePokemonCount: filteredAndSortedPokemons.length,
+      caughtPokemonsDetails: caughtPokemons.map(p => ({
+        id: p.id,
+        name: p.name,
+        isShiny: p.isShiny,
+        instanceId: p.instanceId
+      })),
+      // Check for duplicate instanceIds
+      duplicateInstanceIds: caughtPokemons
+        .map(p => p.instanceId)
+        .filter((id, index, arr) => arr.indexOf(id) !== index)
+    });
+  }, [team, caughtPokemons, filteredAndSortedPokemons]);
 
   const clearFilters = () => {
     setNameFilter('');
@@ -205,6 +321,87 @@ const TeamBuilderPage: React.FC = () => {
       <p className="text-center text-gray-600 dark:text-slate-400 mb-6">
         Drag Pokémon to reorder your team and set battle order
       </p>
+      <p className="text-center text-xs text-gray-500 dark:text-slate-400 mb-4">
+        💡 Press Ctrl+Shift+C to open cheat code
+      </p>
+
+      {/* Cheat Code Modal */}
+      {showCheatCode && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowCheatCode(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-slate-800 rounded-xl p-6 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Zap className="w-6 h-6 text-yellow-500" />
+              <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">
+                Cheat Code
+              </h2>
+            </div>
+            
+            <p className="text-sm text-gray-600 dark:text-slate-300 mb-4">
+              Enter a Pokémon name or ID to add it to your team instantly!
+            </p>
+            
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={cheatCode}
+                onChange={(e) => setCheatCode(e.target.value)}
+                placeholder="e.g., pikachu, charizard, 25"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onKeyPress={(e) => e.key === 'Enter' && handleCheatCode()}
+                autoFocus
+              />
+              
+              {cheatMessage && (
+                <div className={`text-sm p-3 rounded-lg ${
+                  cheatMessage.includes('❌') 
+                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                    : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                }`}>
+                  {cheatMessage}
+                </div>
+              )}
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCheatCode}
+                  disabled={isLoadingCheat || !cheatCode.trim()}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isLoadingCheat ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      Add Pokémon
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowCheatCode(false)}
+                  className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
       {/* Team Section */}
       <div className="mb-8">
         <div className="flex items-center justify-end mb-4">
@@ -214,13 +411,23 @@ const TeamBuilderPage: React.FC = () => {
         </div>
         
         {/* Team Grid - Always shows 6 slots */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-4 auto-rows-fr">
+        <div key={renderKey} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-4 auto-rows-fr">
           {/* Filled team slots */}
           {team.map((poke, index) => {
-            const level = state.persistentParty.byId[poke.id]?.level ?? 5;
+            const level = state.persistentParty.byId[`${poke.id}-${poke.isShiny ? 'shiny' : 'normal'}` as any]?.level ?? 5;
+            
+            // Debug logging for team rendering
+            console.log(`Team Member ${index}:`, {
+              name: poke.name,
+              id: poke.id,
+              isShiny: poke.isShiny,
+              instanceId: poke.instanceId,
+              nature: poke.nature?.name || 'no-nature'
+            });
+            
             return (
               <div 
-                key={poke.id} 
+                key={`${poke.instanceId || 'no-id'}-${index}-${poke.id}-${poke.isShiny ? 'shiny' : 'normal'}`} 
                 className={`relative group ${
                   draggedIndex === index ? 'opacity-50 scale-95' : ''
                 } ${
@@ -243,10 +450,38 @@ const TeamBuilderPage: React.FC = () => {
                     {/* Pokémon Image */}
                     <div className="relative mb-3">
                       <img
-                        src={poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default}
+                        src={poke.isShiny 
+                          ? (poke.sprites.other['official-artwork'].front_shiny || poke.sprites.front_shiny || poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default)
+                          : (poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default)
+                        }
                         alt={poke.name}
                         className="w-full h-32 object-contain"
                       />
+                      {/* Shiny Sparkle Animation */}
+                      {poke.isShiny && (
+                        <div className="absolute inset-0 pointer-events-none">
+                          {[0, 1, 2, 3, 4].map(i => (
+                            <motion.div
+                              key={i}
+                              className="absolute text-yellow-300 text-lg"
+                              style={{ top: `${20 + (i * 15)}%`, left: `${10 + (i * 20)}%` }}
+                              animate={{ 
+                                opacity: [0, 1, 0], 
+                                scale: [0.5, 1.2, 0.5], 
+                                rotate: [0, 180, 360] 
+                              }}
+                              transition={{ 
+                                duration: 2, 
+                                repeat: Infinity, 
+                                delay: i * 0.4, 
+                                ease: "easeInOut" 
+                              }}
+                            >
+                              ✨
+                            </motion.div>
+                          ))}
+                        </div>
+                      )}
                       {/* Level Badge */}
                       <div className="absolute top-0 left-0 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
                         Lv.{level}
@@ -287,7 +522,7 @@ const TeamBuilderPage: React.FC = () => {
                 
                 {/* Remove Button */}
                 <button
-                  onClick={() => removeFromTeam(poke.id)}
+                  onClick={() => removeFromTeam(poke)}
                   className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-colors opacity-0 group-hover:opacity-100"
                 >
                   ×
@@ -531,7 +766,7 @@ const TeamBuilderPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredAndSortedPokemons.map(poke => {
-            const level = state.persistentParty.byId[poke.id]?.level ?? 5;
+            const level = state.persistentParty.byId[`${poke.id}-${poke.isShiny ? 'shiny' : 'normal'}` as any]?.level ?? 5;
             return (
               <div key={poke.id} className="relative group">
                 <Link to={`/team/${poke.id}`}>
@@ -539,10 +774,38 @@ const TeamBuilderPage: React.FC = () => {
                     {/* Pokémon Image */}
                     <div className="relative mb-3">
                       <img
-                        src={poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default}
+                        src={poke.isShiny 
+                          ? (poke.sprites.other['official-artwork'].front_shiny || poke.sprites.front_shiny || poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default)
+                          : (poke.sprites.other['official-artwork'].front_default || poke.sprites.front_default)
+                        }
                         alt={poke.name}
                         className="w-full h-32 object-contain"
                       />
+                      {/* Shiny Sparkle Animation */}
+                      {poke.isShiny && (
+                        <div className="absolute inset-0 pointer-events-none">
+                          {[0, 1, 2, 3, 4].map(i => (
+                            <motion.div
+                              key={i}
+                              className="absolute text-yellow-300 text-lg"
+                              style={{ top: `${20 + (i * 15)}%`, left: `${10 + (i * 20)}%` }}
+                              animate={{ 
+                                opacity: [0, 1, 0], 
+                                scale: [0.5, 1.2, 0.5], 
+                                rotate: [0, 180, 360] 
+                              }}
+                              transition={{ 
+                                duration: 2, 
+                                repeat: Infinity, 
+                                delay: i * 0.4, 
+                                ease: "easeInOut" 
+                              }}
+                            >
+                              ✨
+                            </motion.div>
+                          ))}
+                        </div>
+                      )}
                       {/* Level Badge */}
                       <div className="absolute top-0 left-0 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
                         Lv.{level}
@@ -584,15 +847,40 @@ const TeamBuilderPage: React.FC = () => {
                 {/* Add to Team Button */}
                 <div className="absolute bottom-2 left-2 right-2">
                   <button
-                    onClick={() => canAdd && addToTeam(poke)}
-                    disabled={!canAdd}
+                    onClick={() => {
+                      const isInTeamByInstanceResult = isInTeamByInstance(poke.instanceId || '');
+                      const hasMatchingPokemonInTeam = team.some(teamMember => 
+                        teamMember.id === poke.id && 
+                        teamMember.isShiny === poke.isShiny &&
+                        teamMember.nature?.name === poke.nature?.name
+                      );
+                      const canAddThisPokemon = team.length < 6 && !isInTeamByInstanceResult && !hasMatchingPokemonInTeam;
+                      
+                      if (canAddThisPokemon) {
+                        addToTeam(poke);
+                      }
+                    }}
+                    disabled={team.length >= 6 || isInTeamByInstance(poke.instanceId || '') || team.some(teamMember => 
+                      teamMember.id === poke.id && 
+                      teamMember.isShiny === poke.isShiny &&
+                      teamMember.nature?.name === poke.nature?.name
+                    )}
                     className={`w-full text-xs px-3 py-2 rounded-lg shadow-md transition-colors font-medium ${
-                      canAdd 
+                      team.length < 6 && !isInTeamByInstance(poke.instanceId || '') && !team.some(teamMember => 
+                        teamMember.id === poke.id && 
+                        teamMember.isShiny === poke.isShiny &&
+                        teamMember.nature?.name === poke.nature?.name
+                      )
                         ? 'bg-blue-500 hover:bg-blue-600 text-white' 
                         : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                     }`}
                   >
-                    {canAdd ? 'Add to Team' : 'Team Full'}
+                    {team.length >= 6 ? 'Team Full' : 
+                     (isInTeamByInstance(poke.instanceId || '') || team.some(teamMember => 
+                       teamMember.id === poke.id && 
+                       teamMember.isShiny === poke.isShiny &&
+                       teamMember.nature?.name === poke.nature?.name
+                     )) ? 'In Team' : 'Add to Team'}
                   </button>
                 </div>
               </div>

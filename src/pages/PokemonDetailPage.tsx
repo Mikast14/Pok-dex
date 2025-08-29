@@ -8,6 +8,8 @@ import {
 import { useApp, usePersonaPreferences } from '../contexts/AppContext';
 import { pokemonApi, apiUtils } from '../services/pokemonApi';
 import { Pokemon, PokemonSpecies, EvolutionChain } from '../types/pokemon';
+
+
 import LoadingSpinner from '../components/LoadingSpinner';
 import EvolutionChainView from '../components/EvolutionChain';
 import EvolutionAnimation from '../components/EvolutionAnimation';
@@ -16,7 +18,7 @@ import MoveDetailDrawer from '../components/MoveDetailDrawer';
 
 const PokemonDetailPage: React.FC = () => {
   const { nameOrId } = useParams<{ nameOrId: string }>();
-  const { addFavorite, removeFavorite, isFavorite, setError, addToHistory, state, evolvePokemon } = useApp();
+  const { addFavorite, removeFavorite, isFavorite, setError, addToHistory, state, evolvePokemon, caughtPokemons } = useApp();
   const { } = usePersonaPreferences();
   
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
@@ -31,12 +33,22 @@ const PokemonDetailPage: React.FC = () => {
   const [moveDetailsMap, setMoveDetailsMap] = useState<Record<string, any>>({});
   const [canEvolve, setCanEvolve] = useState<{ nextName: string } | null>(null);
   const [showEvoAnim, setShowEvoAnim] = useState<{ from: string; to: string; fromSprite: string; toSprite: string } | null>(null);
+  const [showShiny, setShowShiny] = useState(false);
 
   useEffect(() => {
     if (nameOrId) {
       loadPokemon(nameOrId);
     }
-  }, [nameOrId]);
+  }, [nameOrId, caughtPokemons]);
+
+  // Update showShiny state based on Pokémon's actual shiny status
+  useEffect(() => {
+    if (pokemon) {
+      setShowShiny(pokemon.isShiny || false);
+    }
+  }, [pokemon]);
+
+
 
   useEffect(() => {
     if (species && species.evolution_chain?.url) {
@@ -48,14 +60,36 @@ const PokemonDetailPage: React.FC = () => {
   const loadPokemon = async (identifier: string) => {
     try {
       setLoading(true);
-      const [pokemonData, speciesData] = await Promise.all([
-        pokemonApi.getPokemon(identifier),
-        pokemonApi.getPokemonSpecies(identifier)
-      ]);
       
-      setPokemon(pokemonData);
-      setSpecies(speciesData);
-      addToHistory(pokemonData);
+      // First, try to find the Pokemon in the user's collection by instanceId
+      const pokemonFromCollection = caughtPokemons.find((p: any) => 
+        p.instanceId === identifier || p.id.toString() === identifier
+      );
+      
+      if (pokemonFromCollection) {
+        // Use the Pokemon from the user's collection
+        setPokemon(pokemonFromCollection);
+        
+        // Get species data for this Pokemon
+        const speciesData = await pokemonApi.getPokemonSpecies(pokemonFromCollection.id);
+        setSpecies(speciesData);
+        addToHistory(pokemonFromCollection);
+      } else {
+        // Fallback: try to get Pokemon from API (for unlocked Pokemon not in collection)
+        try {
+          const [pokemonData, speciesData] = await Promise.all([
+            pokemonApi.getPokemon(identifier),
+            pokemonApi.getPokemonSpecies(identifier)
+          ]);
+          
+          setPokemon(pokemonData);
+          setSpecies(speciesData);
+          addToHistory(pokemonData);
+        } catch (apiError) {
+          console.error('Error loading Pokemon from API:', apiError);
+          setError('Pokemon not found in your collection or the API.');
+        }
+      }
     } catch (error) {
       console.error('Error loading Pokemon:', error);
       setError('Failed to load Pokemon details. Please try again.');
@@ -124,7 +158,7 @@ const PokemonDetailPage: React.FC = () => {
       const node = findNode(evolutionChain.chain);
       const next = node?.evolves_to?.[0];
       const minLevel = next?.evolution_details?.[0]?.min_level ?? null;
-      const currentLevel = state.persistentParty.byId[pokemon.id]?.level ?? 0;
+      const currentLevel = state.persistentParty.byId[`${pokemon.id}-${pokemon.isShiny ? 'shiny' : 'normal'}` as any]?.level ?? 0;
       if (next?.species?.name && minLevel && currentLevel >= minLevel) {
         setCanEvolve({ nextName: next.species.name });
       } else {
@@ -240,24 +274,96 @@ const PokemonDetailPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
           {/* Pokemon Image */}
           <div className="text-center">
-            <motion.img
-              src={pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default}
-              alt={pokemon.name}
-              className="w-64 h-64 mx-auto object-contain"
-              whileHover={{ scale: 1.05, rotate: 5 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            />
+            <div className="relative">
+              <motion.img
+                src={showShiny 
+                  ? (pokemon.sprites.other['official-artwork'].front_shiny || pokemon.sprites.front_shiny || pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default)
+                  : (pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default)
+                }
+                alt={pokemon.name}
+                className={`w-64 h-64 mx-auto object-contain ${showShiny ? 'animate-pulse' : ''}`}
+                whileHover={{ scale: 1.05, rotate: 5 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              />
+              {showShiny && (
+                <div className="absolute top-2 right-2 text-2xl animate-bounce">✨</div>
+              )}
+            </div>
+            <div className="mt-4">
+              {/* Check if user has both normal and shiny versions */}
+              {(() => {
+                const hasNormal = caughtPokemons.some((p: any) => p.id === pokemon?.id && !p.isShiny);
+                const hasShiny = caughtPokemons.some((p: any) => p.id === pokemon?.id && p.isShiny);
+                const isCurrentlyShiny = pokemon?.isShiny;
+                
+                                 if (hasNormal && hasShiny) {
+                   return (
+                     <div className="space-y-2">
+                       <div className="flex gap-2">
+                         {(() => {
+                           const normalPokemon = caughtPokemons.find((p: any) => p.id === pokemon?.id && !p.isShiny);
+                           const shinyPokemon = caughtPokemons.find((p: any) => p.id === pokemon?.id && p.isShiny);
+                           
+                           return (
+                             <>
+                               <Link
+                                 to={`/pokemon/${normalPokemon?.instanceId || normalPokemon?.id}`}
+                                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                   !isCurrentlyShiny
+                                     ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                 }`}
+                               >
+                                 ⭐ Normal
+                               </Link>
+                               <Link
+                                 to={`/pokemon/${shinyPokemon?.instanceId || shinyPokemon?.id}`}
+                                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                   isCurrentlyShiny
+                                     ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                 }`}
+                               >
+                                 ✨ Shiny
+                               </Link>
+                             </>
+                           );
+                         })()}
+                       </div>
+                      <p className="text-xs text-gray-600 dark:text-slate-400">
+                        You have both versions! Click to switch between them.
+                      </p>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div>
+                      <div className={`px-4 py-2 rounded-lg font-medium ${
+                        isCurrentlyShiny 
+                          ? 'bg-yellow-500 text-white' 
+                          : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
+                        {isCurrentlyShiny ? '✨ Shiny' : '⭐ Normal'}
+                      </div>
+                      {isCurrentlyShiny && (
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                          ✨ This is a shiny Pokémon!
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+              })()}
+            </div>
           </div>
 
           {/* Pokemon Info */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-gray-500 dark:text-slate-400 font-mono">
-                  #{pokemon.id.toString().padStart(3, '0')}
-                </span>
                 <h1 className="text-4xl font-bold text-gray-800 dark:text-slate-100 capitalize">
                   {apiUtils.formatPokemonName(pokemon.name)}
+                  {showShiny && <span className="text-yellow-500 ml-2">✨</span>}
                 </h1>
                 <p className="text-lg text-gray-600 dark:text-slate-300">
                   {apiUtils.getEnglishGenus(species)}
@@ -291,6 +397,10 @@ const PokemonDetailPage: React.FC = () => {
                 </span>
               ))}
             </div>
+
+
+
+
 
             {/* Description */}
             <p className="text-gray-700 dark:text-slate-300 leading-relaxed">

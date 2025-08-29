@@ -62,11 +62,11 @@ function UnlockAllPokemonHandler() {
         }
       }
       
-      if (allPokemon.length > 0) {
-        unlockAllPokemon(allPokemon);
-        console.log(`Unlocked ${allPokemon.length} Pokémon from ${generation.name}!`);
-        alert(`🎉 Successfully unlocked ${allPokemon.length} Pokémon from ${generation.name}!\n\nYour Pokédex now contains these Pokémon.`);
-      }
+             if (allPokemon.length > 0) {
+         unlockAllPokemon(allPokemon);
+         console.log(`Unlocked ${allPokemon.length} Pokémon from ${generation.name}!`);
+         alert(`🎉 Successfully unlocked ${allPokemon.length} Pokémon from ${generation.name}!\n\nThese Pokémon have been added to your Pokédex. You can now search and view them!`);
+       }
     } catch (error) {
       console.error(`Failed to unlock ${generation.name}:`, error);
       alert(`❌ Failed to unlock ${generation.name}. Please try again.`);

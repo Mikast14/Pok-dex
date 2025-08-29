@@ -46,8 +46,25 @@ const uniqueById = (list: Pokemon[]) => {
   return result;
 };
 
+// Merge API data with stored Pokédex data to preserve shiny status
+const mergeWithStoredPokedex = (apiPokemon: Pokemon[], storedPokedex: Pokemon[]) => {
+  const storedMap = new Map(storedPokedex.map(p => [p.id, p]));
+  
+  return apiPokemon.map(pokemon => {
+    const stored = storedMap.get(pokemon.id);
+    if (stored && stored.isShiny) {
+      // If we have a shiny version in storage, use it
+      return {
+        ...pokemon,
+        isShiny: true
+      };
+    }
+    return pokemon;
+  });
+};
+
 const SearchPage: React.FC = () => {
-  const { isInPokedex } = useApp();
+  const { isInPokedex, pokedex } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [pokedexPokemon, setPokedexPokemon] = useState<Pokemon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +96,8 @@ const SearchPage: React.FC = () => {
     const detailed = await pokemonApi.getMultiplePokemon(
       list.results.map((_, index) => offset + index + 1)
     );
-    setPokedexPokemon(prev => uniqueById([...(prev || []), ...detailed]));
+    const mergedDetailed = mergeWithStoredPokedex(detailed, pokedex);
+    setPokedexPokemon(prev => uniqueById([...(prev || []), ...mergedDetailed]));
     setGlobalOffset(offset + PAGE_SIZE);
   };
 
@@ -90,7 +108,8 @@ const SearchPage: React.FC = () => {
     const ids: number[] = [];
     for (let id = startId; id <= endId; id++) ids.push(id);
     const detailed = await pokemonApi.getMultiplePokemon(ids);
-    setPokedexPokemon(prev => uniqueById([...(prev || []), ...detailed]));
+    const mergedDetailed = mergeWithStoredPokedex(detailed, pokedex);
+    setPokedexPokemon(prev => uniqueById([...(prev || []), ...mergedDetailed]));
     setGenPageIndex(pageIndex + 1);
   };
 
@@ -98,7 +117,8 @@ const SearchPage: React.FC = () => {
     const ids: number[] = [];
     for (let id = gen.range[0]; id <= gen.range[1]; id++) ids.push(id);
     const detailed = await pokemonApi.getMultiplePokemon(ids);
-    setPokedexPokemon(uniqueById(detailed));
+    const mergedDetailed = mergeWithStoredPokedex(detailed, pokedex);
+    setPokedexPokemon(uniqueById(mergedDetailed));
     setGenPageIndex(Math.ceil(ids.length / PAGE_SIZE));
   };
 
@@ -156,7 +176,8 @@ const SearchPage: React.FC = () => {
           const typeResponses = await Promise.all(selectedTypes.map(t => pokemonApi.getPokemonByType(t)));
           const unionNames = Array.from(new Set(typeResponses.flatMap(tr => tr.pokemon.map((p: any) => p.pokemon.name))));
           const details = await pokemonApi.getMultiplePokemon(unionNames);
-          setPokedexPokemon(uniqueById(details));
+          const mergedDetails = mergeWithStoredPokedex(details, pokedex);
+          setPokedexPokemon(uniqueById(mergedDetails));
         }
       } finally {
         setLoading(false);

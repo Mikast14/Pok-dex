@@ -1,15 +1,25 @@
+export interface Nature {
+  name: string;
+  increasedStat: string | null;
+  decreasedStat: string | null;
+  description: string;
+}
+
 export interface Pokemon {
-  id: number;
+  id: number; // Species ID (e.g., 100 for Voltorb)
+  instanceId?: string; // Unique identifier for each individual Pokémon
   name: string;
   height: number;
   weight: number;
   base_experience: number;
+  nature?: Nature; // Add nature to Pokemon interface
   sprites: {
     front_default: string;
     front_shiny: string;
     other: {
       'official-artwork': {
         front_default: string;
+        front_shiny?: string;
       };
       dream_world: {
         front_default: string;

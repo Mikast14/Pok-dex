@@ -8,6 +8,9 @@ interface LevelPanelProps {
 }
 
 const LevelPanel: React.FC<LevelPanelProps> = ({ isOpen, onClose }) => {
+  // Early return to prevent hook calls when not open
+  if (!isOpen) return null;
+  
   const { team, state, gainLevel, setPartyHp, learnMove, evolvePokemon } = useApp();
   const [pending, setPending] = useState<Record<number, number>>({});
 
@@ -16,8 +19,6 @@ const LevelPanel: React.FC<LevelPanelProps> = ({ isOpen, onClose }) => {
     const lvl = rec?.level ?? 5;
     return { id: p.id, name: p.name, sprite: p.sprites.front_default || p.sprites.other['official-artwork'].front_default, level: lvl };
   }), [team, state.persistentParty.byId]);
-
-  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">

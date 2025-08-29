@@ -1,5 +1,6 @@
 import { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
 import { Pokemon, UserPersona, PokemonType } from '../types/pokemon';
+import { getRandomNature, generateInstanceId } from '../data/natures';
 
 // Define user personas based on challenge requirements
 export const USER_PERSONAS: UserPersona[] = [
@@ -77,7 +78,7 @@ type AppAction =
   | { type: 'CATCH_POKEMON'; payload: Pokemon }
   | { type: 'RELEASE_POKEMON'; payload: number }
   | { type: 'ADD_TO_TEAM'; payload: Pokemon }
-  | { type: 'REMOVE_FROM_TEAM'; payload: number }
+  | { type: 'REMOVE_FROM_TEAM'; payload: Pokemon }
   | { type: 'REORDER_TEAM'; payload: { fromIndex: number; toIndex: number } }
   | { type: 'CLEAR_TEAM' }
   | { type: 'SET_PARTY_HP'; payload: { pokemonId: number; currentHp: number; maxHp: number } }
@@ -92,7 +93,8 @@ type AppAction =
   | { type: 'LEARN_MOVE'; payload: { pokemonId: number; moveName: string; maxPp: number } }
   | { type: 'EVOLVE_POKEMON'; payload: { oldId: number; newPokemon: Pokemon } }
   | { type: 'GAIN_EXP'; payload: { pokemonId: number; amount: number } }
-  | { type: 'UNLOCK_ALL_POKEMON'; payload: Pokemon[] };
+  | { type: 'UNLOCK_ALL_POKEMON'; payload: Pokemon[] }
+  | { type: 'ASSIGN_NATURE_TO_POKEMON'; payload: { pokemonId: number; nature: any } };
 
 const makePersonaData = () => Object.fromEntries(
   USER_PERSONAS.map(p => [p.id, { favorites: [], caughtPokemons: [], pokedex: [], team: [] }])
@@ -117,6 +119,15 @@ const LOCAL_STORAGE_KEY = 'deepdive_personaData';
 function expForNextLevel(level: number): number {
   // Scales moderately; tweak as desired
   return 100 + (level - 1) * 50;
+}
+
+// Helper function to generate a unique key for persistent data
+function getPersistentKey(pokemonId: number, isShiny?: boolean, instanceId?: string): string {
+  // Use instanceId if available, otherwise fall back to species ID + shiny status
+  if (instanceId) {
+    return instanceId;
+  }
+  return `${pokemonId}-${isShiny ? 'shiny' : 'normal'}`;
 }
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -147,15 +158,86 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'CATCH_POKEMON': {
       const caught = personaData[personaId].caughtPokemons;
       const pokedex = personaData[personaId].pokedex;
-      if (caught.some(p => p.id === action.payload.id)) return state;
+      
+      // Assign a random nature and unique instance ID to the caught Pokémon
+      const pokemonWithNature = {
+        ...action.payload,
+        nature: getRandomNature(),
+        instanceId: generateInstanceId()
+      };
+      
+      // Update Pokédex: if this is a shiny Pokémon, replace the existing entry
+      let updatedPokedex = pokedex;
+      const existingPokedexIndex = pokedex.findIndex(p => p.id === action.payload.id);
+      
+      if (existingPokedexIndex !== -1) {
+        // Pokémon already exists in Pokédex
+        if (action.payload.isShiny) {
+          // If caught Pokémon is shiny, replace the existing entry
+          updatedPokedex = [...pokedex];
+          updatedPokedex[existingPokedexIndex] = pokemonWithNature;
+        }
+        // If not shiny, keep the existing entry (don't replace shiny with normal)
+        // The normal Pokémon will still be added to caughtPokemons below
+      } else {
+        // New Pokémon, add to Pokédex
+        updatedPokedex = [...pokedex, pokemonWithNature];
+      }
+      
+      // For caughtPokemons, ALWAYS add the new Pokémon (whether shiny or normal)
+      // This allows you to have both normal and shiny versions in your box
+      const updatedCaughtPokemons = [...caught, pokemonWithNature];
+      
+      console.log('CATCH_POKEMON Debug:', {
+        pokemonId: action.payload.id,
+        pokemonName: action.payload.name,
+        isShiny: action.payload.isShiny,
+        existingInPokedex: existingPokedexIndex !== -1,
+        existingInCaught: caught.some(p => p.id === action.payload.id),
+        caughtPokemonsCount: caught.length,
+        newCaughtPokemonsCount: updatedCaughtPokemons.length,
+        caughtPokemonsIds: caught.map(p => `${p.id}(${p.isShiny ? 'shiny' : 'normal'})`),
+        newPokemonWithNature: pokemonWithNature
+      });
+      
       personaData[personaId] = {
         ...personaData[personaId],
-        caughtPokemons: [...caught, action.payload],
-        pokedex: pokedex.some(p => p.id === action.payload.id) ? pokedex : [...pokedex, action.payload],
+        caughtPokemons: updatedCaughtPokemons,
+        pokedex: updatedPokedex,
       };
       return { ...state, personaData };
     }
+    case 'ASSIGN_NATURE_TO_POKEMON': {
+      const { pokemonId, nature } = action.payload;
+      const personaId = state.currentPersona.id;
+      const personaData = { ...state.personaData };
+      
+      // Update the Pokémon in caughtPokemons
+      const caughtPokemons = personaData[personaId].caughtPokemons.map(p => 
+        p.id === pokemonId ? { ...p, nature } : p
+      );
+      
+      // Update the Pokémon in team
+      const team = personaData[personaId].team.map(p => 
+        p.id === pokemonId ? { ...p, nature } : p
+      );
+      
+      // Update the Pokémon in pokedex
+      const pokedex = personaData[personaId].pokedex.map(p => 
+        p.id === pokemonId ? { ...p, nature } : p
+      );
+      
+      personaData[personaId] = {
+        ...personaData[personaId],
+        caughtPokemons,
+        team,
+        pokedex
+      };
+      
+      return { ...state, personaData };
+    }
     case 'RELEASE_POKEMON': {
+      // Release all instances of the Pokémon species (both normal and shiny)
       personaData[personaId] = {
         ...personaData[personaId],
         caughtPokemons: personaData[personaId].caughtPokemons.filter(p => p.id !== action.payload),
@@ -165,17 +247,108 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'ADD_TO_TEAM': {
       const team = personaData[personaId].team;
-      if (team.length >= 6 || team.some(p => p.id === action.payload.id)) return state;
+      if (team.length >= 6) return state;
+      
+      // Ensure the Pokémon has an instanceId (for backward compatibility)
+      // If the Pokémon doesn't have an instanceId, generate one
+      const pokemonWithInstanceId = action.payload.instanceId ? action.payload : {
+        ...action.payload,
+        instanceId: generateInstanceId()
+      };
+      
+      // Log if we had to generate an instanceId
+      if (!action.payload.instanceId) {
+        console.warn('Pokemon added to team without instanceId, generated new one:', {
+          pokemon: action.payload.name,
+          originalInstanceId: action.payload.instanceId,
+          newInstanceId: pokemonWithInstanceId.instanceId
+        });
+      }
+      
+      // Debug the instance ID generation
+      console.log('Instance ID Debug:', {
+        originalInstanceId: action.payload.instanceId,
+        generatedInstanceId: pokemonWithInstanceId.instanceId,
+        generateInstanceIdFunction: typeof generateInstanceId,
+        generateInstanceIdResult: generateInstanceId()
+      });
+      
+      // Debug logging
+      console.log('ADD_TO_TEAM Debug:', {
+        newPokemon: {
+          id: pokemonWithInstanceId.id,
+          name: pokemonWithInstanceId.name,
+          isShiny: pokemonWithInstanceId.isShiny,
+          instanceId: pokemonWithInstanceId.instanceId,
+          nature: pokemonWithInstanceId.nature?.name || 'no-nature'
+        },
+        currentTeam: team.map(p => ({
+          id: p.id,
+          name: p.name,
+          isShiny: p.isShiny,
+          instanceId: p.instanceId,
+          nature: p.nature?.name || 'no-nature'
+        })),
+        isExactDuplicate: team.some(p => p.instanceId === pokemonWithInstanceId.instanceId)
+      });
+      
+      // Check if this exact Pokémon instance is already in the team using instanceId
+      const isExactDuplicate = team.some(p => p.instanceId === pokemonWithInstanceId.instanceId);
+      
+      if (isExactDuplicate) return state;
+      
       personaData[personaId] = {
         ...personaData[personaId],
-        team: [...team, action.payload],
+        team: [...team, pokemonWithInstanceId],
       };
+      
+      console.log('ADD_TO_TEAM Final State:', {
+        newTeamLength: personaData[personaId].team.length,
+        newTeamMembers: personaData[personaId].team.map(p => ({
+          id: p.id,
+          name: p.name,
+          isShiny: p.isShiny,
+          instanceId: p.instanceId
+        })),
+        caughtPokemonsLength: personaData[personaId].caughtPokemons.length
+      });
+      
       return { ...state, personaData };
     }
     case 'REMOVE_FROM_TEAM': {
+      // Debug logging
+      console.log('REMOVE_FROM_TEAM Debug:', {
+        targetPokemon: {
+          id: action.payload.id,
+          name: action.payload.name,
+          isShiny: action.payload.isShiny,
+          instanceId: action.payload.instanceId,
+          nature: action.payload.nature?.name || 'no-nature'
+        },
+        currentTeam: personaData[personaId].team.map(p => ({
+          id: p.id,
+          name: p.name,
+          isShiny: p.isShiny,
+          instanceId: p.instanceId,
+          nature: p.nature?.name || 'no-nature'
+        })),
+        willRemove: personaData[personaId].team.filter(p => p.instanceId !== action.payload.instanceId)
+      });
+      
+      // Remove the specific Pokémon instance using instanceId
+      const updatedTeam = personaData[personaId].team.filter(p => p.instanceId !== action.payload.instanceId);
+      
+      console.log('REMOVE_FROM_TEAM State Update:', {
+        beforeRemoval: personaData[personaId].team.length,
+        afterRemoval: updatedTeam.length,
+        removedInstanceId: action.payload.instanceId,
+        teamBefore: personaData[personaId].team.map(p => ({ name: p.name, instanceId: p.instanceId })),
+        teamAfter: updatedTeam.map(p => ({ name: p.name, instanceId: p.instanceId }))
+      });
+      
       personaData[personaId] = {
         ...personaData[personaId],
-        team: personaData[personaId].team.filter(p => p.id !== action.payload),
+        team: updatedTeam,
       };
       return { ...state, personaData };
     }
@@ -311,7 +484,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, personaData: personaData2, persistentParty: { byId } };
     }
     case 'GAIN_EXP': {
-      const { pokemonId, amount } = (action as any).payload as { pokemonId: number; amount: number };
+      const { pokemonId, amount } = action.payload;
       const byId = { ...state.persistentParty.byId };
       const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
       let level = existing.level ?? 5;
@@ -324,18 +497,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
       byId[pokemonId] = { ...existing, level, exp };
       return { ...state, persistentParty: { byId } };
     }
-    case 'LEARN_MOVE': {
-      const { pokemonId, moveName, maxPp } = action.payload;
-      const byId = { ...state.persistentParty.byId };
-      const existing = byId[pokemonId] || { currentHp: 0, maxHp: 0, moves: {}, level: 5, exp: 0 };
-      const moves = { ...existing.moves };
-      if (!moves[moveName]) {
-        moves[moveName] = { pp: maxPp, maxPp };
-      }
-      byId[pokemonId] = { ...existing, moves };
-      return { ...state, persistentParty: { byId } };
-    }
-    
     case 'RESTORE_AT_POKECENTER': {
       const byId = { ...state.persistentParty.byId };
       Object.keys(byId).forEach(k => {
@@ -396,14 +557,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         error: null,
       };
     case 'UNLOCK_ALL_POKEMON': {
-      const allPokemon = action.payload;
+      const newPokemon = action.payload;
       const personaId = state.currentPersona.id;
       const personaData = { ...state.personaData };
+      const currentPokedex = personaData[personaId]?.pokedex || [];
+      
+      // Merge new Pokémon with existing Pokédex, avoiding duplicates
+      const existingIds = new Set(currentPokedex.map(p => p.id));
+      const uniqueNewPokemon = newPokemon.filter(p => !existingIds.has(p.id));
+      const mergedPokedex = [...currentPokedex, ...uniqueNewPokemon];
       
       // Add all Pokémon to the Pokédex for the current persona
       personaData[personaId] = {
         ...personaData[personaId],
-        pokedex: allPokemon,
+        pokedex: mergedPokedex,
       };
       
       return { ...state, personaData };
@@ -429,11 +596,12 @@ interface AppContextType {
   catchPokemon: (pokemon: Pokemon) => void;
   releasePokemon: (pokemonId: number) => void;
   addToTeam: (pokemon: Pokemon) => void;
-  removeFromTeam: (pokemonId: number) => void;
+  removeFromTeam: (pokemon: Pokemon) => void;
   reorderTeam: (fromIndex: number, toIndex: number) => void;
   clearTeam: () => void;
   isCaught: (pokemonId: number) => boolean;
   isInTeam: (pokemonId: number) => boolean;
+  isInTeamByInstance: (instanceId: string) => boolean;
   favorites: Pokemon[];
   caughtPokemons: Pokemon[];
   team: Pokemon[];
@@ -450,6 +618,7 @@ interface AppContextType {
   evolvePokemon: (oldId: number, newPokemon: Pokemon) => void;
   gainExp: (pokemonId: number, amount: number) => void;
   unlockAllPokemon: (allPokemon: Pokemon[]) => void;
+  assignNatureToPokemon: (pokemonId: number, nature: any) => void;
   pokedex: Pokemon[];
   isInPokedex: (pokemonId: number) => boolean;
 }
@@ -491,11 +660,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     catchPokemon: (pokemon) => dispatch({ type: 'CATCH_POKEMON', payload: pokemon }),
     releasePokemon: (pokemonId) => dispatch({ type: 'RELEASE_POKEMON', payload: pokemonId }),
     addToTeam: (pokemon) => dispatch({ type: 'ADD_TO_TEAM', payload: pokemon }),
-    removeFromTeam: (pokemonId) => dispatch({ type: 'REMOVE_FROM_TEAM', payload: pokemonId }),
+    removeFromTeam: (pokemon) => dispatch({ type: 'REMOVE_FROM_TEAM', payload: pokemon }),
     reorderTeam: (fromIndex, toIndex) => dispatch({ type: 'REORDER_TEAM', payload: { fromIndex, toIndex } }),
     clearTeam: () => dispatch({ type: 'CLEAR_TEAM' }),
     isCaught: (pokemonId) => caughtPokemons.some(p => p.id === pokemonId),
     isInTeam: (pokemonId) => team.some(p => p.id === pokemonId),
+    isInTeamByInstance: (instanceId) => team.some(p => p.instanceId === instanceId),
     favorites,
     caughtPokemons,
     team,
@@ -512,6 +682,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     evolvePokemon: (oldId, newPokemon) => dispatch({ type: 'EVOLVE_POKEMON', payload: { oldId, newPokemon } }),
     gainExp: (pokemonId, amount) => dispatch({ type: 'GAIN_EXP', payload: { pokemonId, amount } }),
     unlockAllPokemon: (allPokemon) => dispatch({ type: 'UNLOCK_ALL_POKEMON', payload: allPokemon }),
+    assignNatureToPokemon: (pokemonId, nature) => dispatch({ type: 'ASSIGN_NATURE_TO_POKEMON', payload: { pokemonId, nature } }),
     pokedex,
     isInPokedex: (pokemonId) => pokedex.some(p => p.id === pokemonId),
   };

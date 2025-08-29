@@ -7,9 +7,10 @@ import { pokemonApi, apiUtils } from '../services/pokemonApi';
 import { Pokemon } from '../types/pokemon';
 import PokemonGrid from '../components/PokemonGrid';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { getRandomNature } from '../data/natures';
 
 const HomePage: React.FC = () => {
-  const { state, setError, setLoading, catchPokemon, favorites, caughtPokemons, restoreAtPokecenter, team, setPartyHp, addToTeam, setStarterChosen, setPokeball } = useApp();
+  const { state, setError, setLoading, catchPokemon, favorites, caughtPokemons, restoreAtPokecenter, team, setPartyHp, addToTeam, setStarterChosen, setPokeball, assignNatureToPokemon } = useApp();
   const { currentPersona } = usePersonaPreferences();
 
   // Minimal ball options for display purposes only
@@ -51,6 +52,11 @@ const HomePage: React.FC = () => {
       // Mark as caught so Pokédex unlocks and detail is accessible
       catchPokemon(starter);
       addToTeam(starter);
+      
+      // Automatically assign a random nature to the starter
+      const randomNature = getRandomNature();
+      assignNatureToPokemon(starter.id, randomNature);
+      
       // Initialize HP using level-aware formula (default level 5 if unset)
       const baseHp = starter.stats.find(s => s.stat.name === 'hp')?.base_stat || 50;
       const level = Math.max(1, state.persistentParty.byId[starter.id]?.level ?? 5);
@@ -61,6 +67,8 @@ const HomePage: React.FC = () => {
       setStarterChosen(true);
       localStorage.setItem('hasChosenStarter', 'true');
       setShowStarter(false);
+      setError(`Starter chosen! ${starter.name} has a ${randomNature.name} nature!`);
+      setTimeout(() => setError(null), 3000);
     } catch (e) {
       setError('Failed to set starter. Try again.');
     } finally {
@@ -89,6 +97,8 @@ const HomePage: React.FC = () => {
     // End animation
     setTimeout(() => setIsHealing(false), 2600);
   };
+
+
 
   const getBallType = (id: number): { name: string; color: string; accent: string } => {
     const types = [

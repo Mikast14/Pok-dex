@@ -578,9 +578,22 @@ const BattlePage: React.FC = () => {
   const getCommonWildPokemon = async (playerLevel: number): Promise<Pokemon> => {
     const name = pickWildNameForLevel(playerLevel);
     try {
-      return await pokemonApi.getPokemon(name);
+      const pokemon = await pokemonApi.getPokemon(name);
+      
+      // Add shiny chance (1/10 chance for more frequent encounters)
+      const isShiny = Math.random() < (1 / 10);
+      
+      return {
+        ...pokemon,
+        isShiny
+      };
     } catch {
-      return (await pokemonApi.getRandomPokemon(1))[0];
+      const pokemon = (await pokemonApi.getRandomPokemon(1))[0];
+      const isShiny = Math.random() < (1 / 10);
+      return {
+        ...pokemon,
+        isShiny
+      };
     }
   };
 
@@ -615,7 +628,8 @@ const BattlePage: React.FC = () => {
     const enemyLvl = Math.max(3, Math.min(70, playerLevel + (Math.floor(Math.random() * 5) - 2))); // ±2 variance
     setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild, enemyLvl), maxHp: calcMaxHp(wild, enemyLvl), moves: pickMoves(wild, enemyLvl), movePp: {}, atkStage: 0, defStage: 0, level: enemyLvl });
     setEnemyLevel(enemyLvl);
-    setLog([`A wild ${apiUtils.formatPokemonName(wild.name)} appeared!`]);
+    const shinyMessage = wild.isShiny ? '✨ A wild SHINY ' : 'A wild ';
+    setLog([`${shinyMessage}${apiUtils.formatPokemonName(wild.name)} appeared!`]);
     setTurn('player');
     setAnim({ playerAttack: false, enemyAttack: false, enemyHit: false, playerHit: false, enemyFaint: false, playerFaint: false });
     setBusy(false);
@@ -648,7 +662,8 @@ const BattlePage: React.FC = () => {
       const enemyLvl = Math.max(3, Math.min(70, playerLevel + (Math.floor(Math.random() * 5) - 2)));
       setEnemy({ pokemon: wild, currentHp: calcMaxHp(wild, enemyLvl), maxHp: calcMaxHp(wild, enemyLvl), moves: pickMoves(wild, enemyLvl), movePp: {}, atkStage: 0, defStage: 0, level: enemyLvl });
       setEnemyLevel(enemyLvl);
-      setLog([`A wild ${apiUtils.formatPokemonName(wild.name)} appeared!`]);
+      const shinyMessage = wild.isShiny ? '✨ A wild SHINY ' : 'A wild ';
+      setLog([`${shinyMessage}${apiUtils.formatPokemonName(wild.name)} appeared!`]);
       setTurn('player');
       setVictory(false);
       setDefeat(false);
@@ -1380,8 +1395,13 @@ const BattlePage: React.FC = () => {
   };
 
   return (
-    <motion.div className="max-w-5xl mx-auto p-4 space-y-4" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <motion.div 
+      className="max-w-5xl mx-auto p-4 space-y-4 relative min-h-screen" 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }}
+    >
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Player on the left */}
         <div className="glass-morphism rounded-2xl p-4 order-1">
           <div className="flex items-center justify-between mb-2">
@@ -1391,11 +1411,41 @@ const BattlePage: React.FC = () => {
           {hpBar(player.currentHp, player.maxHp)}
           <div className="relative flex items-center justify-center p-4">
             <motion.img
-              src={player.pokemon.sprites.other['official-artwork'].front_default || player.pokemon.sprites.front_default}
-              className={`w-40 h-40 object-contain ${anim.playerHit ? 'filter saturate-50' : ''}`}
+              src={player.pokemon.isShiny 
+                ? (player.pokemon.sprites.other['official-artwork'].front_shiny || player.pokemon.sprites.front_shiny || player.pokemon.sprites.other['official-artwork'].front_default || player.pokemon.sprites.front_default)
+                : (player.pokemon.sprites.other['official-artwork'].front_default || player.pokemon.sprites.front_default)
+              }
+              className={`w-40 h-40 object-contain drop-shadow-lg ${anim.playerHit ? 'filter saturate-50' : 'filter drop-shadow(0 4px 8px rgba(0,0,0,0.15)) brightness-105'}`}
               animate={anim.playerFaint ? { opacity: [1, 0.6, 0], y: [0, 10, 20] } : anim.playerAttack ? { x: [0, 24, 0] } : anim.playerHit ? { x: [0, -8, 8, -6, 6, 0] } : { x: 0 }}
               transition={{ duration: anim.playerFaint ? 0.5 : (anim.playerAttack ? 0.25 : 0.35) }}
             />
+            {player.pokemon.isShiny && (
+              <div className="absolute inset-0 pointer-events-none">
+                {[0, 1, 2, 3, 4].map(i => (
+                  <motion.div
+                    key={i}
+                    className="absolute text-yellow-300 text-2xl"
+                    style={{
+                      top: `${20 + (i * 15)}%`,
+                      left: `${10 + (i * 20)}%`,
+                    }}
+                    animate={{
+                      opacity: [0, 1, 0],
+                      scale: [0.5, 1.2, 0.5],
+                      rotate: [0, 180, 360],
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      delay: i * 0.4,
+                      ease: "easeInOut"
+                    }}
+                  >
+                    ✨
+                  </motion.div>
+                ))}
+              </div>
+            )}
             {hitFx.target === 'player' && <HitEffect typeName={hitFx.typeName} keyId={hitFx.id} />}
           </div>
         </div>
@@ -1403,17 +1453,51 @@ const BattlePage: React.FC = () => {
         {/* Enemy on the right */}
         <div className="glass-morphism rounded-2xl p-4 order-2">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-gray-800 dark:text-slate-100">Wild {apiUtils.formatPokemonName(enemy.pokemon.name)} <span className="text-xs font-normal text-gray-600 dark:text-slate-300">Lv. {enemyLevel ?? '—'}</span></h3>
+            <h3 className="font-bold text-gray-800 dark:text-slate-100">
+              Wild {apiUtils.formatPokemonName(enemy.pokemon.name)}
+              {enemy.pokemon.isShiny && <span className="text-yellow-500 ml-1">✨</span>}
+              <span className="text-xs font-normal text-gray-600 dark:text-slate-300">Lv. {enemyLevel ?? '—'}</span>
+            </h3>
             <span>{enemy.currentHp}/{enemy.maxHp}</span>
           </div>
           {hpBar(enemy.currentHp, enemy.maxHp)}
           <div className="relative flex items-center justify-center p-4">
             <motion.img
-              src={enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default}
-              className={`w-40 h-40 object-contain ${anim.enemyHit ? 'filter saturate-50' : ''}`}
+              src={enemy.pokemon.isShiny 
+                ? (enemy.pokemon.sprites.other['official-artwork'].front_shiny || enemy.pokemon.sprites.front_shiny || enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default)
+                : (enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default)
+              }
+              className={`w-40 h-40 object-contain drop-shadow-lg ${anim.enemyHit ? 'filter saturate-50' : 'filter drop-shadow(0 4px 8px rgba(0,0,0,0.15)) brightness-105'}`}
               animate={victory ? { opacity: [1, 0.6, 0], y: [0, 10, 20] } : anim.enemyAttack ? { x: [0, -24, 0] } : anim.enemyHit ? { x: [0, 8, -8, 6, -6, 0] } : { x: 0 }}
               transition={{ duration: victory ? 0.5 : anim.enemyAttack ? 0.25 : 0.35 }}
             />
+            {enemy.pokemon.isShiny && (
+              <div className="absolute inset-0 pointer-events-none">
+                {[0, 1, 2, 3, 4].map(i => (
+                  <motion.div
+                    key={i}
+                    className="absolute text-yellow-300 text-2xl"
+                    style={{
+                      top: `${20 + (i * 15)}%`,
+                      left: `${10 + (i * 20)}%`,
+                    }}
+                    animate={{
+                      opacity: [0, 1, 0],
+                      scale: [0.5, 1.2, 0.5],
+                      rotate: [0, 180, 360],
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      delay: i * 0.4,
+                      ease: "easeInOut"
+                    }}
+                  >
+                    ✨
+                  </motion.div>
+                ))}
+              </div>
+            )}
             {hitFx.target === 'enemy' && <HitEffect typeName={hitFx.typeName} keyId={hitFx.id} />}
           </div>
         </div>
@@ -1482,23 +1566,132 @@ const BattlePage: React.FC = () => {
 
       {/* Switch */}
       <div className="glass-morphism rounded-2xl p-4">
-        <h4 className="font-semibold mb-3 text-gray-800 dark:text-slate-100">Switch Pokémon</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-          {playerParty.map((c, idx) => (
-            <button
-              key={c.pokemon.id + '-' + idx}
-              onClick={() => switchTo(idx)}
-              disabled={!(playerCanAct || forceSwitch) || idx === activeIdx || c.currentHp <= 0}
-              className={`px-3 py-2 rounded-lg font-medium transition text-sm flex items-center gap-2 ${idx === activeIdx ? 'bg-gray-300 text-gray-800' : c.currentHp > 0 ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-white cursor-not-allowed'}`}
-            >
-              <img
-                src={c.pokemon.sprites.front_default || c.pokemon.sprites.other['official-artwork'].front_default}
-                className="w-6 h-6 object-contain"
-              />
-              <span className="truncate">{apiUtils.formatPokemonName(c.pokemon.name)}</span>
-              <span className="ml-auto">({c.currentHp}/{c.maxHp})</span>
-            </button>
-          ))}
+        <h4 className="font-semibold mb-4 text-gray-800 dark:text-slate-100 flex items-center gap-2">
+          <span>My Team</span>
+          <span className="text-sm font-normal text-gray-600 dark:text-slate-400">
+            ({playerParty.filter(p => p.currentHp > 0).length}/{playerParty.length} healthy)
+          </span>
+        </h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {playerParty.map((c, idx) => {
+            const isActive = idx === activeIdx;
+            const isHealthy = c.currentHp > 0;
+            const canSwitch = (playerCanAct || forceSwitch) && !isActive && isHealthy;
+            const hpPercentage = Math.round((c.currentHp / c.maxHp) * 100);
+            const level = state.persistentParty.byId[c.pokemon.id]?.level ?? 5;
+            
+            return (
+              <button
+                key={c.pokemon.id + '-' + idx}
+                onClick={() => switchTo(idx)}
+                disabled={!canSwitch}
+
+                className={`relative group p-3 rounded-xl font-medium transition-all duration-200 text-sm overflow-hidden ${
+                  isActive 
+                    ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-500 text-blue-800 dark:text-blue-200' 
+                    : isHealthy 
+                      ? 'bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-700 hover:border-green-400 dark:hover:border-green-500 hover:shadow-lg text-gray-800 dark:text-slate-200' 
+                      : 'bg-gray-100 dark:bg-slate-700 border-2 border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 cursor-not-allowed'
+                }`}
+                              >
+                  
+                  
+                  {/* Active indicator */}
+                  {isActive && (
+                    <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full font-bold z-10">
+                      ACTIVE
+                    </div>
+                  )}
+                  
+                  {/* Fainted indicator */}
+                  {!isHealthy && (
+                    <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold z-10">
+                      FAINTED
+                    </div>
+                  )}
+                
+                                  <div className="flex items-center gap-3 relative z-10">
+                    {/* Pokémon sprite with shiny sparkles */}
+                    <div className="relative">
+                    <img
+                      src={c.pokemon.isShiny 
+                        ? (c.pokemon.sprites.other['official-artwork'].front_shiny || c.pokemon.sprites.front_shiny || c.pokemon.sprites.other['official-artwork'].front_default || c.pokemon.sprites.front_default)
+                        : (c.pokemon.sprites.other['official-artwork'].front_default || c.pokemon.sprites.front_default)
+                      }
+                      className="w-12 h-12 object-contain drop-shadow-md brightness-105"
+                      alt={c.pokemon.name}
+                    />
+                    {/* Shiny sparkles */}
+                    {c.pokemon.isShiny && (
+                      <div className="absolute inset-0 pointer-events-none">
+                        {[0, 1, 2].map(i => (
+                          <motion.div
+                            key={i}
+                            className="absolute text-yellow-300 text-sm"
+                            style={{
+                              top: `${20 + (i * 20)}%`,
+                              left: `${10 + (i * 25)}%`,
+                            }}
+                            animate={{
+                              opacity: [0, 1, 0],
+                              scale: [0.5, 1.2, 0.5],
+                              rotate: [0, 180, 360],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              delay: i * 0.6,
+                              ease: "easeInOut"
+                            }}
+                          >
+                            ✨
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Pokémon info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold truncate capitalize">
+                        {apiUtils.formatPokemonName(c.pokemon.name)}
+                      </span>
+                      {c.pokemon.isShiny && (
+                        <span className="text-yellow-500 text-xs">✨</span>
+                      )}
+                      <span className="text-xs text-gray-600 dark:text-slate-400 ml-auto">
+                        Lv.{level}
+                      </span>
+                    </div>
+                    
+                    {/* HP Bar */}
+                    <div className="w-full bg-gray-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden mb-1">
+                      <div 
+                        className="h-full transition-all duration-300 rounded-full" 
+                        style={{ 
+                          width: `${Math.max(0, hpPercentage)}%`,
+                          backgroundColor: hpPercentage > 60 ? '#22c55e' : hpPercentage > 30 ? '#f59e0b' : '#ef4444'
+                        }} 
+                      />
+                    </div>
+                    
+                    {/* HP Text */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600 dark:text-slate-400">
+                        HP: {c.currentHp}/{c.maxHp}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Hover effect */}
+                {canSwitch && (
+                  <div className="absolute inset-0 bg-green-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1568,18 +1761,51 @@ const BattlePage: React.FC = () => {
             animate={{ scale: 1, opacity: 1 }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xl font-bold">Catch Wild {apiUtils.formatPokemonName(enemy.pokemon.name)}</h3>
+              <h3 className="text-xl font-bold">
+                Catch Wild {apiUtils.formatPokemonName(enemy.pokemon.name)}
+                {enemy.pokemon.isShiny && <span className="text-yellow-500 ml-1">✨</span>}
+              </h3>
               <span className="text-sm text-gray-500 dark:text-slate-400">HP: {enemy.currentHp}/{enemy.maxHp}</span>
             </div>
             <div className="relative flex items-center justify-center">
               {/* Enemy sprite */}
               <motion.img
-                src={enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default}
-                className="w-40 h-40 object-contain"
+                src={enemy.pokemon.isShiny 
+                  ? (enemy.pokemon.sprites.other['official-artwork'].front_shiny || enemy.pokemon.sprites.front_shiny || enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default)
+                  : (enemy.pokemon.sprites.other['official-artwork'].front_default || enemy.pokemon.sprites.front_default)
+                }
+                className="w-40 h-40 object-contain drop-shadow-lg brightness-105"
                 style={{ opacity: inBall ? 0 : 1 }}
                 animate={popOut ? { y: [0, -30, 0], scale: [1, 1.1, 1] } : shakes > 0 ? { x: [0, -6, 6, -3, 3, 0] } : {}}
                 transition={{ duration: popOut ? 0.6 : 0.8 }}
               />
+              {enemy.pokemon.isShiny && (
+                <div className="absolute inset-0 pointer-events-none">
+                  {[0, 1, 2, 3, 4].map(i => (
+                    <motion.div
+                      key={i}
+                      className="absolute text-yellow-300 text-2xl"
+                      style={{
+                        top: `${20 + (i * 15)}%`,
+                        left: `${10 + (i * 20)}%`,
+                      }}
+                      animate={{
+                        opacity: [0, 1, 0],
+                        scale: [0.5, 1.2, 0.5],
+                        rotate: [0, 180, 360],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        delay: i * 0.4,
+                        ease: "easeInOut"
+                      }}
+                    >
+                      ✨
+                    </motion.div>
+                  ))}
+                </div>
+              )}
               {showImpact && (
                 <motion.div
                   className="absolute w-28 h-28 rounded-full border-4 border-yellow-300"

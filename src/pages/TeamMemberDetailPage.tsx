@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useApp } from '../contexts/AppContext';
 import { apiUtils, pokemonApi } from '../services/pokemonApi';
+import { Star } from 'lucide-react';
+import { getNatureStatModifier } from '../data/natures';
 
 const expForNextLevel = (level: number) => 100 + (level - 1) * 50;
 
@@ -12,9 +14,15 @@ const TeamMemberDetailPage: React.FC = () => {
   const { team, state } = useApp();
   const numericId = Number(id);
   const member = useMemo(() => team.find(p => p.id === numericId) || null, [team, numericId]);
-  const persistent = state.persistentParty.byId[numericId];
+  const persistent = member ? state.persistentParty.byId[`${member.id}-${member.isShiny ? 'shiny' : 'normal'}` as any] : state.persistentParty.byId[numericId];
   const [fetched, setFetched] = useState<any | null>(null);
-  const target = member || fetched;
+  
+  // Check if this Pokémon is in your caught list (even if not in team)
+  const caughtPokemon = state.personaData[state.currentPersona.id]?.caughtPokemons.find(p => p.id === numericId) ||
+                       state.personaData[state.currentPersona.id]?.pokedex.find(p => p.id === numericId);
+  
+  // Use team member, caught Pokémon, or fetched Pokémon (in that order)
+  const target = member || caughtPokemon || fetched;
   const [loading, setLoading] = useState(false);
   const level = persistent?.level ?? 5;
   const exp = persistent?.exp ?? 0;
@@ -82,21 +90,54 @@ const TeamMemberDetailPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div className="text-center">
             <motion.img
-              src={target.sprites.other['official-artwork'].front_default || target.sprites.front_default}
+              src={target.isShiny 
+                ? (target.sprites.other['official-artwork'].front_shiny || target.sprites.front_shiny || target.sprites.other['official-artwork'].front_default || target.sprites.front_default)
+                : (target.sprites.other['official-artwork'].front_default || target.sprites.front_default)
+              }
               alt={target.name}
               className="w-64 h-64 mx-auto object-contain"
               whileHover={{ scale: 1.05 }}
             />
+            {target.isShiny && (
+              <div className="mt-2 text-yellow-500 text-sm font-semibold">
+                ✨ Shiny Pokémon
+              </div>
+            )}
           </div>
           <div className="space-y-3">
             <div>
-              <div className="text-sm text-gray-500 dark:text-slate-400 font-mono">#{target.id.toString().padStart(3, '0')}</div>
               <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100 capitalize">{apiUtils.formatPokemonName(target.name)}</h1>
               <div className="mt-1 flex gap-2">
                 {target.types.map((t: any) => (
                   <span key={t.type.name} className="px-3 py-1 rounded-full text-white text-xs font-semibold" style={{ backgroundColor: '#444' }}>{t.type.name}</span>
                 ))}
               </div>
+              
+              {/* Nature Display */}
+              {target.nature && (
+                <div className="mt-3 p-3 bg-white/60 dark:bg-white/10 rounded-lg border border-white/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Star className="w-4 h-4 text-purple-500" />
+                    <span className="font-semibold text-gray-800 dark:text-slate-100">{target.nature.name}</span>
+                    <span className="text-gray-500">•</span>
+                    <span className="text-sm text-gray-600 dark:text-slate-400 italic">{target.nature.description}</span>
+                  </div>
+                  {(target.nature.increasedStat || target.nature.decreasedStat) && (
+                    <div className="flex gap-2">
+                      {target.nature.increasedStat && (
+                        <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded">
+                          +{target.nature.increasedStat}
+                        </span>
+                      )}
+                      {target.nature.decreasedStat && (
+                        <span className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded">
+                          -{target.nature.decreasedStat}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="mt-2">
@@ -111,12 +152,30 @@ const TeamMemberDetailPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-3 gap-3">
-              {target.stats.map((s: any) => (
-                <div key={s.stat.name} className="bg-white/60 dark:bg-white/10 rounded-lg p-3 border border-white/20">
-                  <div className="text-xs text-gray-500 dark:text-slate-400">{apiUtils.formatStatName(s.stat.name)}</div>
-                  <div className="text-lg font-bold text-gray-800 dark:text-slate-100">{s.base_stat}</div>
-                </div>
-              ))}
+              {target.stats.map((s: any) => {
+                const natureModifier = target.nature ? getNatureStatModifier(target.nature, s.stat.name) : 1;
+                const modifiedStat = Math.floor(s.base_stat * natureModifier);
+                const isIncreased = target.nature?.increasedStat === s.stat.name;
+                const isDecreased = target.nature?.decreasedStat === s.stat.name;
+                
+                return (
+                  <div key={s.stat.name} className="bg-white/60 dark:bg-white/10 rounded-lg p-3 border border-white/20">
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{apiUtils.formatStatName(s.stat.name)}</div>
+                    <div className={`text-lg font-bold ${
+                      isIncreased ? 'text-green-600 dark:text-green-400' :
+                      isDecreased ? 'text-red-600 dark:text-red-400' :
+                      'text-gray-800 dark:text-slate-100'
+                    }`}>
+                      {modifiedStat}
+                      {natureModifier !== 1 && (
+                        <div className="text-xs text-gray-500 dark:text-slate-400">
+                          ({natureModifier > 1 ? '+' : ''}{Math.round((natureModifier - 1) * 100)}%)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
